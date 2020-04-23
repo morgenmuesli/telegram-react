@@ -6,23 +6,23 @@
  */
 
 import React from 'react';
-import copy from 'copy-to-clipboard';
-import { compose } from 'recompose';
+import { copy } from '../../Utils/Text';
+import { compose } from '../../Utils/HOC';
 import { withTranslation } from 'react-i18next';
 import { withSnackbar } from 'notistack';
-import CloseIcon from '@material-ui/icons/Close';
+import CloseIcon from '../../Assets/Icons/Close';
 import LinkIcon from '@material-ui/icons/Link';
-import MoreIcon from '@material-ui/icons/MoreVert';
+import MoreIcon from '../../Assets/Icons/More';
 import IconButton from '@material-ui/core/IconButton';
 import ShareIcon from '@material-ui/icons/Share';
 import ListItemIcon from '@material-ui/core/ListItemIcon';
 import ListItemText from '@material-ui/core/ListItemText';
 import Menu from '@material-ui/core/Menu';
 import MenuItem from '@material-ui/core/MenuItem';
+import { forward } from '../../Actions/Client';
 import { NOTIFICATION_AUTO_HIDE_DURATION_MS } from '../../Constants';
 import OptionStore from '../../Stores/OptionStore';
 import StickerStore from '../../Stores/StickerStore';
-import ApplicationStore from '../../Stores/ApplicationStore';
 import TdLibController from '../../Controllers/TdLibController';
 
 class ShareStickerSetButton extends React.Component {
@@ -52,11 +52,7 @@ class ShareStickerSetButton extends React.Component {
 
         copy(link);
 
-        const key = `${link}_copy_stickers_link`;
-        const message = t('LinkCopied');
-        const action = null;
-
-        this.handleScheduledAction(key, message, action);
+        this.handleScheduledAction(t('LinkCopied'));
     };
 
     getStickersLink = stickerSet => {
@@ -70,30 +66,23 @@ class ShareStickerSetButton extends React.Component {
         return (telegramUrlOption ? telegramUrlOption.value : 'https://telegram.org/') + 'addstickers/' + name;
     };
 
-    handleScheduledAction = (key, message, action) => {
-        if (!key) return;
+    handleScheduledAction = message => {
+        const { enqueueSnackbar, closeSnackbar } = this.props;
 
-        const { enqueueSnackbar, classes, t } = this.props;
-        if (!enqueueSnackbar) return;
-
-        const TRANSITION_DELAY = 150;
-        if (
-            ApplicationStore.addScheduledAction(key, NOTIFICATION_AUTO_HIDE_DURATION_MS + 2 * TRANSITION_DELAY, action)
-        ) {
-            enqueueSnackbar(message, {
-                autoHideDuration: NOTIFICATION_AUTO_HIDE_DURATION_MS,
-                action: [
-                    <IconButton
-                        key='close'
-                        aria-label='Close'
-                        color='inherit'
-                        className='notification-close-button'
-                        onClick={() => ApplicationStore.removeScheduledAction(key)}>
-                        <CloseIcon />
-                    </IconButton>
-                ]
-            });
-        }
+        const snackKey = enqueueSnackbar(message, {
+            autoHideDuration: NOTIFICATION_AUTO_HIDE_DURATION_MS,
+            preventDuplicate: true,
+            action: [
+                <IconButton
+                    key='close'
+                    aria-label='Close'
+                    color='inherit'
+                    className='notification-close-button'
+                    onClick={() => closeSnackbar(snackKey)}>
+                    <CloseIcon />
+                </IconButton>
+            ]
+        });
     };
 
     handleShare = () => {
@@ -118,10 +107,7 @@ class ShareStickerSetButton extends React.Component {
             clear_draft: false
         };
 
-        TdLibController.clientUpdate({
-            '@type': 'clientUpdateForward',
-            info: { inputMessageContent }
-        });
+        forward(inputMessageContent);
     };
 
     render() {

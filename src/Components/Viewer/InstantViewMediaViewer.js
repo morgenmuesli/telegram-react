@@ -8,9 +8,10 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import classNames from 'classnames';
-import { compose } from 'recompose';
+import { compose } from '../../Utils/HOC';
 import { withIV } from '../InstantView/IVContext';
 import { withTranslation } from 'react-i18next';
+import KeyboardManager, { KeyboardHandler } from '../Additional/KeyboardManager';
 import CloseIcon from '../../Assets/Icons/Close';
 import NavigateBeforeIcon from '../../Assets/Icons/Left';
 import ReplyIcon from '../../Assets/Icons/Share';
@@ -20,32 +21,39 @@ import MediaViewerFooterText from './MediaViewerFooterText';
 import MediaViewerFooterButton from './MediaViewerFooterButton';
 import MediaViewerDownloadButton from './MediaViewerDownloadButton';
 import { getBlockCaption, getBlockMedia, getBlockUrl, getValidMediaBlocks } from '../../Utils/InstantView';
-import { getViewerFile, saveMedia } from '../../Utils/File';
+import { cancelPreloadIVMediaViewerContent, getViewerFile, preloadIVMediaViewerContent, saveMedia } from '../../Utils/File';
 import { getInputMediaContent } from '../../Utils/Media';
-import { setInstantViewViewerContent } from '../../Actions/Client';
-import TdLibController from '../../Controllers/TdLibController';
+import { forward, setInstantViewViewerContent } from '../../Actions/Client';
 import './InstantViewMediaViewer.css';
 
 class InstantViewMediaViewer extends React.Component {
-    state = {
-        index: -1,
-        hasPreviousMedia: false,
-        hasNextMedia: false,
-        blocks: []
-    };
+    constructor(props) {
+        super(props);
+
+        this.state = {
+            index: -1,
+            hasPreviousMedia: false,
+            hasNextMedia: false,
+            blocks: []
+        };
+
+        this.keyboardHandler = new KeyboardHandler(this.onKeyDown);
+    }
 
     componentDidMount() {
         this.loadContent();
 
-        document.addEventListener('keydown', this.onKeyDown, false);
+        KeyboardManager.add(this.keyboardHandler);
     }
 
     componentWillUnmount() {
-        document.removeEventListener('keydown', this.onKeyDown, false);
+        KeyboardManager.remove(this.keyboardHandler);
     }
 
     onKeyDown = event => {
-        if (event.keyCode === 39) {
+        if (event.keyCode === 27) {
+            this.handleClose();
+        } else if (event.keyCode === 39) {
             this.handlePrevious();
         } else if (event.keyCode === 37) {
             this.handleNext();
@@ -64,6 +72,8 @@ class InstantViewMediaViewer extends React.Component {
             hasPreviousMedia: this.hasPreviousMedia(index, blocks),
             hasNextMedia: this.hasNextMedia(index, blocks)
         });
+
+        preloadIVMediaViewerContent(index, blocks);
     }
 
     hasPreviousMedia(index, blocks) {
@@ -83,11 +93,7 @@ class InstantViewMediaViewer extends React.Component {
 
         if (!this.hasPreviousMedia(index, blocks)) return;
 
-        this.setState({
-            index: nextIndex,
-            hasPreviousMedia: this.hasPreviousMedia(nextIndex, blocks),
-            hasNextMedia: this.hasNextMedia(nextIndex, blocks)
-        });
+        return this.loadMedia(nextIndex);
     };
 
     hasNextMedia(index, blocks) {
@@ -107,15 +113,34 @@ class InstantViewMediaViewer extends React.Component {
 
         if (!this.hasNextMedia(index, blocks)) return;
 
-        this.setState({
-            index: nextIndex,
-            hasPreviousMedia: this.hasPreviousMedia(nextIndex, blocks),
-            hasNextMedia: this.hasNextMedia(nextIndex, blocks)
-        });
+        return this.loadMedia(nextIndex);
+    };
+
+    loadMedia = index => {
+        const { blocks } = this.state;
+
+        if (index < 0) return false;
+        if (index >= blocks.length) return false;
+
+        this.setState(
+            {
+                index,
+                hasPreviousMedia: this.hasPreviousMedia(index, blocks),
+                hasNextMedia: this.hasNextMedia(index, blocks)
+            }
+        );
+
+        preloadIVMediaViewerContent(index, blocks);
+        return true;
     };
 
     handleClose = () => {
         setInstantViewViewerContent(null);
+
+        const { index, blocks } = this.state;
+        if (index !== -1) {
+            cancelPreloadIVMediaViewerContent(index, blocks);
+        }
     };
 
     handleForward = () => {
@@ -124,10 +149,7 @@ class InstantViewMediaViewer extends React.Component {
         const inputMessageContent = getInputMediaContent(media, null);
         if (!inputMessageContent) return;
 
-        TdLibController.clientUpdate({
-            '@type': 'clientUpdateForward',
-            info: { inputMessageContent }
-        });
+        forward(inputMessageContent);
     };
 
     handleSave = () => {

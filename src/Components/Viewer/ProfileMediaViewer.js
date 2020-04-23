@@ -9,6 +9,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import classNames from 'classnames';
 import { withTranslation } from 'react-i18next';
+import KeyboardManager, { KeyboardHandler } from '../Additional/KeyboardManager';
 import CloseIcon from '../../Assets/Icons/Close';
 import NavigateBeforeIcon from '../../Assets/Icons/Left';
 import ReplyIcon from '../../Assets/Icons/Share';
@@ -18,8 +19,8 @@ import MediaViewerButton from './MediaViewerButton';
 import MediaViewerFooterText from './MediaViewerFooterText';
 import MediaViewerFooterButton from './MediaViewerFooterButton';
 import ProfileMediaViewerContent from './ProfileMediaViewerContent';
-import ProfileMediaViewerControl from '../Tile/ProfileMediaViewerControl';
-import { setProfileMediaViewerContent } from '../../Actions/Client';
+import ProfileMediaInfo from '../Tile/ProfileMediaInfo';
+import { forward, setProfileMediaViewerContent } from '../../Actions/Client';
 import { getPhotoFromChat, getChatUserId, isPrivateChat } from '../../Utils/Chat';
 import { getProfilePhotoDateHint, getProfilePhoto } from '../../Utils/User';
 import { loadProfileMediaViewerContent, preloadProfileMediaViewerContent, saveOrDownload } from '../../Utils/File';
@@ -35,6 +36,7 @@ class ProfileMediaViewer extends React.Component {
         super(props);
 
         this.history = [];
+        this.keyboardHandler = new KeyboardHandler(this.handleKeyDown);
 
         const { chatId, fileId } = this.props;
 
@@ -101,14 +103,17 @@ class ProfileMediaViewer extends React.Component {
 
         this.loadHistory(photo);
 
-        document.addEventListener('keydown', this.onKeyDown, false);
+        KeyboardManager.add(this.keyboardHandler);
     }
 
     componentWillUnmount() {
-        document.removeEventListener('keydown', this.onKeyDown, false);
+        KeyboardManager.remove(this.keyboardHandler);
     }
 
-    onKeyDown = event => {
+    handleKeyDown = event => {
+        event.preventDefault();
+        event.stopPropagation();
+
         if (event.keyCode === 27) {
             const { deleteConfirmationOpened } = this.state;
             if (deleteConfirmationOpened) return;
@@ -232,10 +237,7 @@ class ProfileMediaViewer extends React.Component {
             ttl: 0
         };
 
-        TdLibController.clientUpdate({
-            '@type': 'clientUpdateForward',
-            info: { inputMessageContent }
-        });
+        forward(inputMessageContent);
     };
 
     handleDelete = () => {
@@ -358,7 +360,7 @@ class ProfileMediaViewer extends React.Component {
         return (
             <div className={classNames('media-viewer', 'media-viewer-default')}>
                 <div className='media-viewer-footer'>
-                    <ProfileMediaViewerControl chatId={chatId} date={getProfilePhotoDateHint(userProfilePhoto)} />
+                    <ProfileMediaInfo chatId={chatId} date={getProfilePhotoDateHint(userProfilePhoto)} />
                     <MediaViewerFooterText
                         title={t('AttachPhoto')}
                         subtitle={totalCount && index >= 0 ? `${index + 1} of ${totalCount}` : null}

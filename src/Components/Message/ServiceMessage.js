@@ -6,11 +6,10 @@
  */
 
 import React from 'react';
-import { compose } from 'recompose';
-import { withRestoreRef, withSaveRef } from '../../Utils/HOC';
-import withStyles from '@material-ui/core/styles/withStyles';
+import { withRestoreRef, withSaveRef, compose } from '../../Utils/HOC';
 import { withTranslation } from 'react-i18next';
 import classNames from 'classnames';
+import DayMeta from './DayMeta';
 import UnreadSeparator from './UnreadSeparator';
 import Photo from './Media/Photo';
 import { openMedia } from '../../Utils/Message';
@@ -25,38 +24,19 @@ const chatPhotoStyle = {
     margin: '0 auto 5px'
 };
 
-const styles = theme => ({
-    '@keyframes highlighted': {
-        from: { backgroundColor: theme.palette.primary.main + '22' },
-        to: { backgroundColor: 'transparent' }
-    },
-    messageHighlighted: {
-        animation: '$highlighted 4s ease-out'
-    },
-    serviceMessageContent: {
-        color: theme.palette.text.secondary
-    }
-});
-
 class ServiceMessage extends React.Component {
     constructor(props) {
         super(props);
 
-        if (process.env.NODE_ENV !== 'production') {
-            const { chatId, messageId } = this.props;
-            this.state = {
-                message: MessageStore.get(chatId, messageId),
-                highlighted: false
-            };
-        } else {
-            this.state = {
-                highlighted: false
-            };
-        }
+        const { chatId, messageId } = this.props;
+        this.state = {
+            message: MessageStore.get(chatId, messageId),
+            highlighted: false
+        };
     }
 
     shouldComponentUpdate(nextProps, nextState) {
-        const { chatId, messageId, sendingState, showUnreadSeparator, theme } = this.props;
+        const { chatId, messageId, sendingState, showUnreadSeparator } = this.props;
         const { highlighted } = this.state;
 
         if (nextProps.chatId !== chatId) {
@@ -72,10 +52,6 @@ class ServiceMessage extends React.Component {
         }
 
         if (nextProps.showUnreadSeparator !== showUnreadSeparator) {
-            return true;
-        }
-
-        if (nextProps.theme !== theme) {
             return true;
         }
 
@@ -131,38 +107,41 @@ class ServiceMessage extends React.Component {
     };
 
     render() {
-        const { classes, chatId, messageId, showUnreadSeparator } = this.props;
+        const { chatId, messageId, showUnreadSeparator, showDate } = this.props;
         const { highlighted } = this.state;
 
         const message = MessageStore.get(chatId, messageId);
-        if (!message) return <div>[empty service message]</div>;
+        if (!message) return null;
 
-        const { content } = message;
-        if (!content) return <div>[empty service message]</div>;
+        const { content, date } = message;
+        if (!content) return null;
 
         const { photo } = content;
 
         const text = getServiceMessageContent(message, true);
 
-        const messageClassName = classNames('service-message', { [classes.messageHighlighted]: highlighted });
-
         return (
-            <div className={messageClassName} onAnimationEnd={this.handleAnimationEnd}>
-                {showUnreadSeparator && <UnreadSeparator />}
-                <div className='service-message-wrapper'>
-                    <div className={classNames('service-message-content', classes.serviceMessageContent)}>
-                        <div>{text}</div>
+            <div>
+                {showDate && <DayMeta date={date} />}
+                <div
+                    className={classNames('service-message', { 'message-highlighted': highlighted })}
+                    onAnimationEnd={this.handleAnimationEnd}>
+                    {showUnreadSeparator && <UnreadSeparator />}
+                    <div className='service-message-wrapper'>
+                        <div className='service-message-content'>
+                            <div>{text}</div>
+                        </div>
                     </div>
+                    {photo && (
+                        <Photo
+                            chatId={chatId}
+                            messageId={messageId}
+                            photo={photo}
+                            style={chatPhotoStyle}
+                            openMedia={this.openMedia}
+                        />
+                    )}
                 </div>
-                {photo && (
-                    <Photo
-                        chatId={chatId}
-                        messageId={messageId}
-                        photo={photo}
-                        style={chatPhotoStyle}
-                        openMedia={this.openMedia}
-                    />
-                )}
             </div>
         );
     }
@@ -170,7 +149,6 @@ class ServiceMessage extends React.Component {
 
 const enhance = compose(
     withSaveRef(),
-    withStyles(styles, { withTheme: true }),
     withTranslation(),
     withRestoreRef()
 );

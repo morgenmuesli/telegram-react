@@ -5,10 +5,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { EventEmitter } from 'events';
+import EventEmitter from './EventEmitter';
 import ActionScheduler from '../Utils/ActionScheduler';
 import { closeChat } from '../Actions/Client';
 import { subscribeNotifications } from '../registerServiceWorker';
+import { PAGE_WIDTH_SMALL } from '../Constants';
 import TdLibController from '../Controllers/TdLibController';
 
 class ApplicationStore extends EventEmitter {
@@ -19,8 +20,23 @@ class ApplicationStore extends EventEmitter {
 
         this.addTdLibListener();
         this.addStatistics();
-        this.setMaxListeners(Infinity);
+
+        this.isSmallWidth = window.innerWidth < PAGE_WIDTH_SMALL;
+        window.addEventListener('resize', this.onWindowResize);
     }
+
+    onWindowResize = () => {
+        const { isSmallWidth } = this;
+
+        const nextIsSmallWidth = window.innerWidth < PAGE_WIDTH_SMALL;
+        if (nextIsSmallWidth !== isSmallWidth) {
+            this.isSmallWidth = nextIsSmallWidth;
+            TdLibController.clientUpdate({
+                '@type': 'clientUpdatePageWidth',
+                isSmallWidth: nextIsSmallWidth
+            })
+        }
+    };
 
     reset = () => {
         this.dialogsReady = false;
@@ -36,7 +52,7 @@ class ApplicationStore extends EventEmitter {
         this.isChatDetailsVisible = false;
         this.mediaViewerContent = null;
         this.profileMediaViewerContent = null;
-        this.dragging = false;
+        this.dragParams = null;
         this.actionScheduler = new ActionScheduler(this.handleScheduledAction, this.handleCancelScheduledAction);
     };
 
@@ -203,6 +219,13 @@ class ApplicationStore extends EventEmitter {
                 this.emit('clientUpdateDialogsReady', update);
                 break;
             }
+            case 'clientUpdateDragging': {
+                const { dragging, files } = update;
+
+                this.dragParams = dragging ? { dragging, files } : null;
+                this.emit('clientUpdateDragging', update);
+                break;
+            }
             case 'clientUpdateEditMessage': {
                 this.emit('clientUpdateEditMessage', update);
                 break;
@@ -212,6 +235,14 @@ class ApplicationStore extends EventEmitter {
                 this.mediaViewerContent = content;
 
                 this.emit('clientUpdateMediaViewerContent', update);
+                break;
+            }
+            case 'clientUpdateNewContentAvailable': {
+                this.emit('clientUpdateNewContentAvailable', update);
+                break;
+            }
+            case 'clientUpdatePageWidth': {
+                this.emit('clientUpdatePageWidth', update);
                 break;
             }
             case 'clientUpdateProfileMediaViewerContent': {
@@ -324,8 +355,8 @@ class ApplicationStore extends EventEmitter {
     };
 
     addTdLibListener = () => {
-        TdLibController.addListener('update', this.onUpdate);
-        TdLibController.addListener('clientUpdate', this.onClientUpdate);
+        TdLibController.on('update', this.onUpdate);
+        TdLibController.on('clientUpdate', this.onClientUpdate);
     };
 
     removeTdLibListener = () => {
@@ -334,7 +365,7 @@ class ApplicationStore extends EventEmitter {
     };
 
     addStatistics = () => {
-        TdLibController.addListener('update', this.onUpdateStatistics);
+        TdLibController.on('update', this.onUpdateStatistics);
     };
 
     setChatId = (chatId, messageId = null) => {
@@ -371,15 +402,6 @@ class ApplicationStore extends EventEmitter {
     getAuthorizationState() {
         return this.authorizationState;
     }
-
-    getDragging = () => {
-        return this.dragging;
-    };
-
-    setDragging = value => {
-        this.dragging = value;
-        this.emit('clientUpdateDragging', value);
-    };
 
     assign(source1, source2) {
         Object.assign(source1, source2);

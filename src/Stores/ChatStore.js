@@ -5,8 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { EventEmitter } from 'events';
-import Cookies from 'universal-cookie';
+import EventEmitter from './EventEmitter';
 import InputTypingManager from '../Utils/InputTypingManager';
 import UserStore from './UserStore';
 import TdLibController from '../Controllers/TdLibController';
@@ -19,7 +18,6 @@ class ChatStore extends EventEmitter {
         this.loadClientData();
 
         this.addTdLibListener();
-        this.setMaxListeners(Infinity);
     }
 
     reset = () => {
@@ -29,16 +27,21 @@ class ChatStore extends EventEmitter {
         this.counters = new Map();
         this.skippedUpdates = [];
         this.chatList = new Map();
+        this.wallpaper = null;
     };
 
     loadClientData = () => {
-        const cookies = new Cookies();
         const clientData = new Map();
         try {
-            const data = cookies.get('clientData');
-            Object.keys(data).forEach(key => {
-                clientData.set(Number(key), data[key]);
-            });
+            let data = localStorage.get('clientData');
+            if (data) {
+                data = JSON.parse(data);
+                if (data) {
+                    Object.keys(data).forEach(key => {
+                        clientData.set(Number(key), data[key]);
+                    });
+                }
+            }
         } catch {}
 
         this.clientData = clientData;
@@ -53,8 +56,7 @@ class ChatStore extends EventEmitter {
             return obj;
         }, {});
 
-        const cookies = new Cookies();
-        cookies.set('clientData', obj);
+        localStorage.setItem('clientData', JSON.stringify(obj));
     };
 
     updateChatChatList(chatId, chatList) {
@@ -110,6 +112,17 @@ class ChatStore extends EventEmitter {
                         this.skippedUpdates = [];
                     }
                 }
+                break;
+            }
+            case 'updateChatActionBar': {
+                const { chat_id, action_bar } = update;
+
+                const chat = this.get(chat_id);
+                if (chat) {
+                    this.assign(chat, { action_bar });
+                }
+
+                this.emitFastUpdate(update);
                 break;
             }
             case 'updateChatChatList': {
@@ -367,11 +380,14 @@ class ChatStore extends EventEmitter {
 
     onClientUpdate = update => {
         switch (update['@type']) {
-            case 'clientUpdateClearHistory': {
+            case 'clientUpdateChatBackground': {
+                const { wallpaper } = update;
+                this.wallpaper = wallpaper;
+
                 this.emitUpdate(update);
                 break;
             }
-            case 'clientUpdateCloseArchive': {
+            case 'clientUpdateClearHistory': {
                 this.emitUpdate(update);
                 break;
             }
@@ -379,11 +395,27 @@ class ChatStore extends EventEmitter {
                 this.emitUpdate(update);
                 break;
             }
-            case 'clientUpdateOpenArchive': {
+            case 'clientUpdateArchive': {
                 this.emitUpdate(update);
                 break;
             }
             case 'clientUpdateOpenChat': {
+                this.emitUpdate(update);
+                break;
+            }
+            case 'clientUpdateContacts': {
+                this.emitUpdate(update);
+                break;
+            }
+            case 'clientUpdateSettings': {
+                this.emitUpdate(update);
+                break;
+            }
+            case 'clientUpdateNewGroup': {
+                this.emitUpdate(update);
+                break;
+            }
+            case 'clientUpdateNewChannel': {
                 this.emitUpdate(update);
                 break;
             }
@@ -398,6 +430,10 @@ class ChatStore extends EventEmitter {
                 this.setClientData(chatId, clientData);
                 this.saveClientData();
 
+                this.emitUpdate(update);
+                break;
+            }
+            case 'clientUpdateUnpin': {
                 this.emitUpdate(update);
                 break;
             }
@@ -418,8 +454,8 @@ class ChatStore extends EventEmitter {
     };
 
     addTdLibListener = () => {
-        TdLibController.addListener('update', this.onUpdate);
-        TdLibController.addListener('clientUpdate', this.onClientUpdate);
+        TdLibController.on('update', this.onUpdate);
+        TdLibController.on('clientUpdate', this.onClientUpdate);
     };
 
     removeTdLibListener = () => {

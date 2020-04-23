@@ -6,27 +6,34 @@
  */
 
 import React, { Component } from 'react';
-import PropTypes from 'prop-types';
 import classNames from 'classnames';
-import withStyles from '@material-ui/core/styles/withStyles';
+import CSSTransition from 'react-transition-group/CSSTransition';
+import Archive from './Archive';
 import Search from './Search/Search';
 import DialogsHeader from './DialogsHeader';
 import DialogsList from './DialogsList';
+import SidebarPage from './SidebarPage';
+import Settings from './Settings/Settings';
+import Contacts from './Contacts';
 import UpdatePanel from './UpdatePanel';
-import { borderStyle } from '../Theme';
 import { openChat } from '../../Actions/Client';
 import { getArchiveTitle } from '../../Utils/Archive';
 import { loadChatsContent } from '../../Utils/File';
+import { duration } from '@material-ui/core/styles/transitions';
 import AppStore from '../../Stores/ApplicationStore';
 import CacheStore from '../../Stores/CacheStore';
 import ChatStore from '../../Stores/ChatStore';
 import FileStore from '../../Stores/FileStore';
 import TdLibController from '../../Controllers/TdLibController';
 import './Dialogs.css';
+import SidebarDialog from '../Popup/SidebarDialog';
+import NewGroup from './NewGroup';
+import NewChannel from './NewChannel';
 
-const styles = theme => ({
-    ...borderStyle(theme)
-});
+const defaultTimeout = {
+    enter: duration.enteringScreen,
+    exit: duration.leavingScreen
+};
 
 class Dialogs extends Component {
     constructor(props) {
@@ -35,8 +42,6 @@ class Dialogs extends Component {
         this.dialogListRef = React.createRef();
         this.archiveListRef = React.createRef();
         this.dialogsHeaderRef = React.createRef();
-
-        const { isChatDetailsVisible } = AppStore;
 
         this.state = {
             cache: null,
@@ -47,9 +52,13 @@ class Dialogs extends Component {
             mainItems: [],
             archiveItems: [],
 
-            isChatDetailsVisible,
+            timeout: defaultTimeout,
             openSearch: false,
             openArchive: false,
+            openContacts: false,
+            openSettings: false,
+            openNewGroup: false,
+            openNewChannel: false,
 
             searchChatId: 0,
             searchText: null,
@@ -64,9 +73,12 @@ class Dialogs extends Component {
             archiveTitle,
             mainItems,
             archiveItems,
-            isChatDetailsVisible,
             openSearch,
             openArchive,
+            openSettings,
+            openContacts,
+            openNewGroup,
+            openNewChannel,
             searchChatId,
             searchText
         } = this.state;
@@ -91,15 +103,27 @@ class Dialogs extends Component {
             return true;
         }
 
-        if (nextState.isChatDetailsVisible !== isChatDetailsVisible) {
-            return true;
-        }
-
         if (nextState.openSearch !== openSearch) {
             return true;
         }
 
         if (nextState.openArchive !== openArchive) {
+            return true;
+        }
+
+        if (nextState.openSettings !== openSettings) {
+            return true;
+        }
+
+        if (nextState.openContacts !== openContacts) {
+            return true;
+        }
+
+        if (nextState.openNewGroup !== openNewGroup) {
+            return true;
+        }
+
+        if (nextState.openNewChannel !== openNewChannel) {
             return true;
         }
 
@@ -117,9 +141,8 @@ class Dialogs extends Component {
     componentDidMount() {
         this.loadCache();
 
-        AppStore.on('clientUpdateChatDetailsVisibility', this.onClientUpdateChatDetailsVisibility);
-        AppStore.on('clientUpdateSearchChat', this.onClientUpdateSearchChat);
         AppStore.on('clientUpdateThemeChange', this.onClientUpdateThemeChange);
+        AppStore.on('clientUpdatePageWidth', this.onClientUpdatePageWidth);
 
         ChatStore.on('updateChatChatList', this.onUpdateChatChatList);
 
@@ -129,14 +152,17 @@ class Dialogs extends Component {
         ChatStore.on('updateChatLastMessage', this.onUpdateChatOrder);
         ChatStore.on('updateChatOrder', this.onUpdateChatOrder);
 
-        ChatStore.on('clientUpdateOpenArchive', this.onClientUpdateOpenArchive);
-        ChatStore.on('clientUpdateCloseArchive', this.onClientUpdateCloseArchive);
+        AppStore.on('clientUpdateSearchChat', this.onClientUpdateSearchChat);
+        ChatStore.on('clientUpdateSettings', this.onClientUpdateSettings);
+        ChatStore.on('clientUpdateArchive', this.onClientUpdateArchive);
+        ChatStore.on('clientUpdateContacts', this.onClientUpdateContacts);
+        ChatStore.on('clientUpdateNewGroup', this.onClientUpdateNewGroup);
+        ChatStore.on('clientUpdateNewChannel', this.onClientUpdateNewChannel);
     }
 
     componentWillUnmount() {
-        AppStore.off('clientUpdateChatDetailsVisibility', this.onClientUpdateChatDetailsVisibility);
-        AppStore.off('clientUpdateSearchChat', this.onClientUpdateSearchChat);
         AppStore.off('clientUpdateThemeChange', this.onClientUpdateThemeChange);
+        AppStore.off('clientUpdatePageWidth', this.onClientUpdatePageWidth);
 
         ChatStore.off('updateChatChatList', this.onUpdateChatChatList);
 
@@ -146,9 +172,35 @@ class Dialogs extends Component {
         ChatStore.off('updateChatLastMessage', this.onUpdateChatOrder);
         ChatStore.off('updateChatOrder', this.onUpdateChatOrder);
 
-        ChatStore.off('clientUpdateOpenArchive', this.onClientUpdateOpenArchive);
-        ChatStore.off('clientUpdateCloseArchive', this.onClientUpdateCloseArchive);
+        AppStore.off('clientUpdateSearchChat', this.onClientUpdateSearchChat);
+        ChatStore.off('clientUpdateSettings', this.onClientUpdateSettings);
+        ChatStore.off('clientUpdateArchive', this.onClientUpdateArchive);
+        ChatStore.off('clientUpdateContacts', this.onClientUpdateContacts);
+        ChatStore.off('clientUpdateNewGroup', this.onClientUpdateNewGroup);
+        ChatStore.off('clientUpdateNewChannel', this.onClientUpdateNewChannel);
     }
+
+    onClientUpdatePageWidth = update => {
+        const { isSmallWidth } = update;
+
+        if (!isSmallWidth) return;
+
+        const { openSettings, openContacts, openSearch, openNewGroup, openNewChannel } = this.state;
+        if (openSettings || openContacts || openSearch || openNewGroup || openNewChannel) {
+            this.setState({
+                    openContacts: false,
+                    openSettings: false,
+                    openSearch: false,
+                    openNewGroup: false,
+                    openNewChannel: false,
+                    timeout: 0
+                }, () => {
+                    this.setState({
+                        timeout: defaultTimeout
+                    });
+            });
+        }
+    };
 
     async loadCache() {
         const cache = (await CacheStore.loadCache()) || {};
@@ -234,25 +286,56 @@ class Dialogs extends Component {
         }
     };
 
-    onClientUpdateOpenArchive = update => {
-        this.setState({ openArchive: true });
+    onClientUpdateContacts = async update => {
+        const { isSmallWidth } = AppStore;
+        if (isSmallWidth) return;
+
+        const { open } = update;
+
+        this.setState({ openContacts: open });
     };
 
-    onClientUpdateCloseArchive = update => {
-        this.setState({ openArchive: false });
+    onClientUpdateSettings = update => {
+        const { isSmallWidth } = AppStore;
+        if (isSmallWidth) return;
+
+        const { open, chatId } = update;
+
+        this.setState({ openSettings: open, meChatId: chatId });
+    };
+
+    onClientUpdateNewGroup = async update => {
+        const { isSmallWidth } = AppStore;
+        if (isSmallWidth) return;
+
+        const { open } = update;
+
+        this.setState({ openNewGroup: open });
+    };
+
+    onClientUpdateNewChannel = async update => {
+        const { isSmallWidth } = AppStore;
+        if (isSmallWidth) return;
+
+        const { open } = update;
+
+        this.setState({ openNewChannel: open });
+    };
+
+    onClientUpdateArchive = update => {
+        const { open } = update;
+
+        this.setState({ openArchive: open });
     };
 
     onClientUpdateThemeChange = update => {
         this.forceUpdate();
     };
 
-    onClientUpdateChatDetailsVisibility = update => {
-        const { isChatDetailsVisible } = AppStore;
-
-        this.setState({ isChatDetailsVisible });
-    };
-
     onClientUpdateSearchChat = update => {
+        const { isSmallWidth } = AppStore;
+        if (isSmallWidth) return;
+
         const { chatId, query } = update;
         const { openSearch, searchChatId, searchText } = this.state;
 
@@ -265,7 +348,10 @@ class Dialogs extends Component {
             {
                 openSearch: true,
                 searchChatId: chatId,
-                searchText: null
+                searchText: null,
+                openSettings: false,
+                openActiveSessions: false,
+                openContacts: false
             },
             () => {
                 if (header) {
@@ -301,13 +387,13 @@ class Dialogs extends Component {
         const searchText = openSearch ? this.state.searchText : null;
 
         this.setState({
-            openSearch: openSearch,
-            searchChatId: searchChatId,
-            searchText: searchText
+            openSearch,
+            searchChatId,
+            searchText
         });
     };
 
-    handleClose = () => {
+    handleCloseSearch = () => {
         this.setState({
             openSearch: false,
             searchChatId: 0,
@@ -331,17 +417,41 @@ class Dialogs extends Component {
         loadChatsContent(store, chatIds);
     }
 
+    handleCloseArchive = () => {
+        this.setState({ openArchive: false });
+    };
+
+    handleCloseContacts = () => {
+        this.setState({ openContacts: false });
+    };
+
+    handleCloseSettings = () => {
+        this.setState({ openSettings: false });
+    };
+
+    handleCloseNewGroup = () => {
+        this.setState({ openNewGroup: false });
+    };
+
+    handleCloseNewChannel = () => {
+        this.setState({ openNewChannel: false });
+    };
+
     render() {
-        const { classes } = this.props;
         const {
             cache,
             showArchive,
             archiveTitle,
             mainItems,
             archiveItems,
-            isChatDetailsVisible,
+            meChatId,
+            openSettings,
+            openContacts,
             openArchive,
             openSearch,
+            openNewGroup,
+            openNewChannel,
+            timeout,
             searchChatId,
             searchText
         } = this.state;
@@ -350,50 +460,74 @@ class Dialogs extends Component {
         const archiveCacheItems = cache ? cache.archiveChats || [] : null;
 
         return (
-            <div
-                className={classNames(classes.borderColor, 'dialogs', {
-                    'dialogs-third-column': isChatDetailsVisible
-                })}>
-                <DialogsHeader
-                    ref={this.dialogsHeaderRef}
-                    openArchive={openArchive}
-                    openSearch={openSearch}
-                    onClick={this.handleHeaderClick}
-                    onSearch={this.handleSearch}
-                    onSearchTextChange={this.handleSearchTextChange}
-                />
-                <div className='dialogs-content'>
-                    <DialogsList
-                        type='chatListMain'
-                        ref={this.dialogListRef}
-                        cacheItems={mainCacheItems}
-                        items={mainItems}
-                        showArchive={showArchive}
-                        archiveTitle={archiveTitle}
-                        open={true}
-                        onSaveCache={this.handleSaveCache}
-                    />
-                    <DialogsList
-                        type='chatListArchive'
-                        ref={this.archiveListRef}
-                        cacheItems={archiveCacheItems}
-                        items={archiveItems}
-                        open={openArchive}
-                        onSaveCache={this.handleSaveCache}
-                    />
-                    {openSearch && (
-                        <Search
-                            chatId={searchChatId}
-                            text={searchText}
-                            onSelectMessage={this.handleSelectMessage}
-                            onClose={this.handleClose}
+            <>
+                <div className='dialogs'>
+                    <div className='sidebar-page'>
+                        <DialogsHeader
+                            ref={this.dialogsHeaderRef}
+                            openSearch={openSearch}
+                            timeout={timeout !== 0}
+                            onClick={this.handleHeaderClick}
+                            onSearch={this.handleSearch}
+                            onSearchTextChange={this.handleSearchTextChange}
                         />
-                    )}
+                        <div className='dialogs-content'>
+                            <DialogsList
+                                type='chatListMain'
+                                ref={this.dialogListRef}
+                                cacheItems={mainCacheItems}
+                                items={mainItems}
+                                showArchive={showArchive}
+                                archiveTitle={archiveTitle}
+                                open={true}
+                                onSaveCache={this.handleSaveCache}
+                            />
+                            <CSSTransition
+                                classNames='search'
+                                timeout={timeout}
+                                in={openSearch}
+                                mountOnEnter={true}
+                                unmountOnExit={true}>
+                                <Search
+                                    chatId={searchChatId}
+                                    text={searchText}
+                                    onSelectMessage={this.handleSelectMessage}
+                                    onClose={this.handleCloseSearch}
+                                />
+                            </CSSTransition>
+                        </div>
+                        <UpdatePanel />
+                    </div>
+
+                    <SidebarPage open={openArchive} timeout={timeout} onClose={this.handleCloseArchive}>
+                        <Archive
+                            innerListRef={this.archiveListRef}
+                            items={archiveItems}
+                            cacheItems={archiveCacheItems}
+                        />
+                    </SidebarPage>
+
+                    <SidebarPage open={openContacts} timeout={timeout} onClose={this.handleCloseContacts}>
+                        <Contacts />
+                    </SidebarPage>
+
+                    <SidebarPage open={openSettings} timeout={timeout} onClose={this.handleCloseSettings}>
+                        <Settings chatId={meChatId} />
+                    </SidebarPage>
+
+                    <SidebarPage open={openNewGroup} timeout={timeout} onClose={this.handleCloseNewGroup}>
+                        <NewGroup />
+                    </SidebarPage>
+
+                    <SidebarPage open={openNewChannel} timeout={timeout} onClose={this.handleCloseNewChannel}>
+                        <NewChannel />
+                    </SidebarPage>
+
+                    <SidebarDialog/>
                 </div>
-                <UpdatePanel />
-            </div>
+            </>
         );
     }
 }
 
-export default withStyles(styles)(Dialogs);
+export default Dialogs;

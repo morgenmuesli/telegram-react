@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { EventEmitter } from 'events';
+import EventEmitter from './EventEmitter';
 import TdLibController from '../Controllers/TdLibController';
 
 class MessageStore extends EventEmitter {
@@ -15,7 +15,6 @@ class MessageStore extends EventEmitter {
         this.reset();
 
         this.addTdLibListener();
-        this.setMaxListeners(Infinity);
     }
 
     reset = () => {
@@ -162,6 +161,10 @@ class MessageStore extends EventEmitter {
                 this.emit('clientUpdateClearSelection', update);
                 break;
             }
+            case 'clientUpdateMessageShake': {
+                this.emit('clientUpdateMessageShake', update);
+                break;
+            }
             case 'clientUpdateMessageHighlighted': {
                 this.emit('clientUpdateMessageHighlighted', update);
                 break;
@@ -203,8 +206,8 @@ class MessageStore extends EventEmitter {
     }
 
     addTdLibListener = () => {
-        TdLibController.addListener('update', this.onUpdate);
-        TdLibController.addListener('clientUpdate', this.onClientUpdate);
+        TdLibController.on('update', this.onUpdate);
+        TdLibController.on('clientUpdate', this.onClientUpdate);
     };
 
     removeTdLibListener = () => {
@@ -251,6 +254,8 @@ class MessageStore extends EventEmitter {
     }
 
     set(message) {
+        if (!message) return;
+
         let chat = this.items.get(message.chat_id);
         if (!chat) {
             chat = new Map();

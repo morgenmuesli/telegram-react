@@ -5,8 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { EventEmitter } from 'events';
-import { isMessageMuted } from '../Utils/Message';
+import EventEmitter from './EventEmitter';
+import { isMessageMuted } from '../Utils/Store';
 import { APP_NAME, NOTIFICATION_AUDIO_DELAY_MS } from '../Constants';
 import ChatStore from './ChatStore';
 import MessageStore from './MessageStore';
@@ -19,7 +19,6 @@ class NotificationStore extends EventEmitter {
         this.reset();
 
         this.addTdLibListener();
-        this.setMaxListeners(Infinity);
     }
 
     reset = () => {
@@ -168,8 +167,12 @@ class NotificationStore extends EventEmitter {
                         const now = new Date();
                         if (now > this.nextSoundAt) {
                             // console.log('[ns] audio play');
-                            const audio = new Audio('sound_a.mp3');
-                            audio.play();
+                            try {
+                                const audio = new Audio('sound_a.mp3');
+                                audio.play();
+                            } catch {
+
+                            }
 
                             const nextSoundAt = new Date();
                             nextSoundAt.setMilliseconds(nextSoundAt.getMilliseconds() + NOTIFICATION_AUDIO_DELAY_MS);
@@ -224,8 +227,8 @@ class NotificationStore extends EventEmitter {
     };
 
     addTdLibListener = () => {
-        TdLibController.addListener('update', this.onUpdate);
-        TdLibController.addListener('clientUpdate', this.onClientUpdate);
+        TdLibController.on('update', this.onUpdate);
+        TdLibController.on('clientUpdate', this.onClientUpdate);
     };
 
     removeTdLibListener = () => {

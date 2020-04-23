@@ -8,7 +8,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import classNames from 'classnames';
-import Lottie from '../../Viewer/Lottie';
+// import Lottie from '../../Viewer/Lottie';
 import { isBlurredThumbnail, isValidAnimatedSticker } from '../../../Utils/Media';
 import { getFitSize } from '../../../Utils/Common';
 import { getBlob, getSrc } from '../../../Utils/File';
@@ -16,10 +16,12 @@ import { inflateBlob } from '../../../Workers/BlobInflator';
 import { STICKER_DISPLAY_SIZE } from '../../../Constants';
 import ApplicationStore from '../../../Stores/ApplicationStore';
 import FileStore from '../../../Stores/FileStore';
+import InstantViewStore from '../../../Stores/InstantViewStore';
 import MessageStore from '../../../Stores/MessageStore';
 import StickerStore from '../../../Stores/StickerStore';
 import './Sticker.css';
-import InstantViewStore from '../../../Stores/InstantViewStore';
+
+const Lottie = React.lazy(() => import('../../Viewer/Lottie'));
 
 export const StickerSourceEnum = Object.freeze({
     HINTS: 'HINTS',
@@ -363,12 +365,14 @@ class Sticker extends React.Component {
 
             return (
                 <div className={classNames('sticker', className)} style={style} onClick={openMedia}>
-                    <img
-                        className={classNames('sticker-image', { 'media-blurred': isBlurred && blur })}
-                        draggable={false}
-                        src={thumbnailSrc}
-                        alt=''
-                    />
+                    { thumbnailSrc && (
+                        <img
+                            className={classNames('sticker-image', { 'media-blurred': isBlurred && blur })}
+                            draggable={false}
+                            src={thumbnailSrc}
+                            alt=''
+                        />
+                    )}
                 </div>
             );
         }
@@ -379,36 +383,42 @@ class Sticker extends React.Component {
             content = isAnimated ? (
                 <>
                     {animationData ? (
-                        <Lottie
-                            ref={this.lottieRef}
-                            options={{
-                                autoplay: autoplay,
-                                loop: true,
-                                animationData,
-                                renderer: 'svg',
-                                rendererSettings: {
-                                    preserveAspectRatio: 'xMinYMin slice', // Supports the same options as the svg element's preserveAspectRatio property
-                                    clearCanvas: false,
-                                    progressiveLoad: true, // Boolean, only svg renderer, loads dom elements when needed. Might speed up initialization for large number of elements.
-                                    hideOnTransparent: true, //Boolean, only svg renderer, hides elements when opacity reaches 0 (defaults to true)
-                                    className: 'lottie-svg'
-                                }
-                            }}
-                            eventListeners={[
-                                {
-                                    eventName: 'loopComplete',
-                                    callback: this.handleAnimationLoopComplete
-                                }
-                            ]}
-                            onMouseOut={this.handleAnimationMouseOut}
-                        />
+                        <React.Suspense fallback={null}>
+                            <Lottie
+                                ref={this.lottieRef}
+                                options={{
+                                    autoplay: autoplay,
+                                    loop: true,
+                                    animationData,
+                                    renderer: 'svg',
+                                    rendererSettings: {
+                                        preserveAspectRatio: 'xMinYMin slice', // Supports the same options as the svg element's preserveAspectRatio property
+                                        clearCanvas: false,
+                                        progressiveLoad: true, // Boolean, only svg renderer, loads dom elements when needed. Might speed up initialization for large number of elements.
+                                        hideOnTransparent: true, //Boolean, only svg renderer, hides elements when opacity reaches 0 (defaults to true)
+                                        className: 'lottie-svg'
+                                    }
+                                }}
+                                eventListeners={[
+                                    {
+                                        eventName: 'loopComplete',
+                                        callback: this.handleAnimationLoopComplete
+                                    }
+                                ]}
+                                onMouseOut={this.handleAnimationMouseOut}
+                            />
+                        </React.Suspense>
                     ) : (
-                        <img
-                            className={classNames('sticker-image', { 'media-blurred': isBlurred && blur })}
-                            draggable={false}
-                            src={thumbnailSrc}
-                            alt=''
-                        />
+                        <>
+                            {thumbnailSrc && (
+                                <img
+                                    className={classNames('sticker-image', { 'media-blurred': isBlurred && blur })}
+                                    draggable={false}
+                                    src={thumbnailSrc}
+                                    alt=''
+                                />
+                            )}
+                        </>
                     )}
                 </>
             ) : (
@@ -416,12 +426,16 @@ class Sticker extends React.Component {
                     {src && !preview ? (
                         <img className='sticker-image' draggable={false} src={src} alt='' />
                     ) : (
-                        <img
-                            className={classNames('sticker-image', { 'media-blurred': isBlurred && blur })}
-                            draggable={false}
-                            src={thumbnailSrc}
-                            alt=''
-                        />
+                        <>
+                            { thumbnailSrc && (
+                                <img
+                                    className={classNames('sticker-image', { 'media-blurred': isBlurred && blur })}
+                                    draggable={false}
+                                    src={thumbnailSrc}
+                                    alt=''
+                                />
+                            )}
+                        </>
                     )}
                 </>
             );

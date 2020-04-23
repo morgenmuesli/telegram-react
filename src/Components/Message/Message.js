@@ -7,15 +7,15 @@
 
 import React, { Component } from 'react';
 import classNames from 'classnames';
-import { compose } from 'recompose';
+import { compose } from '../../Utils/HOC';
 import { withTranslation } from 'react-i18next';
-import withStyles from '@material-ui/core/styles/withStyles';
 import CheckMarkIcon from '@material-ui/icons/Check';
+import DayMeta from './DayMeta';
 import Reply from './Reply';
 import Forward from './Forward';
 import Meta from './Meta';
-import MessageStatus from './MessageStatus';
 import MessageAuthor from './MessageAuthor';
+import MessageMenu from './MessageMenu';
 import UserTile from '../Tile/UserTile';
 import ChatTile from '../Tile/ChatTile';
 import UnreadSeparator from './UnreadSeparator';
@@ -23,139 +23,101 @@ import WebPage from './Media/WebPage';
 import {
     getEmojiMatches,
     getText,
-    getMedia,
-    getUnread,
     getWebPage,
     openMedia,
     showMessageForward,
-    canMessageBeEdited,
-    isMessagePinned
+    isMetaBubble,
+    canMessageBeForwarded,
+    getMessageStyle
 } from '../../Utils/Message';
-import { canPinMessages, canSendMessages } from '../../Utils/Chat';
+import { getMedia } from '../../Utils/Media';
+import { canSendMessages, isChannelChat, isPrivateChat } from '../../Utils/Chat';
 import {
     openUser,
     openChat,
     selectMessage,
-    openReply,
-    forwardMessages,
-    replyMessage,
-    editMessage,
-    clearSelection,
-    deleteMessages
+    openReply, replyMessage, forwardMessages
 } from '../../Actions/Client';
+import { withRestoreRef, withSaveRef } from '../../Utils/HOC';
 import MessageStore from '../../Stores/MessageStore';
 import TdLibController from '../../Controllers/TdLibController';
 import './Message.css';
-import Popover from '@material-ui/core/Popover';
-import MenuList from '@material-ui/core/MenuList';
-import MenuItem from '@material-ui/core/MenuItem';
-import ChatStore from '../../Stores/ChatStore';
-import { pinMessage, unpinMessage } from '../../Actions/Message';
-import { withRestoreRef, withSaveRef } from '../../Utils/HOC';
-
-const styles = theme => ({
-    message: {
-        backgroundColor: 'transparent'
-    },
-    menuListRoot: {
-        minWidth: 150
-    },
-    messageAuthorColor: {
-        color: theme.palette.primary.main
-    },
-    messageSelected: {
-        backgroundColor: theme.palette.primary.main + '22'
-    },
-    messageSelectTick: {
-        background: theme.palette.primary.main,
-        color: 'white'
-    },
-    '@keyframes highlighted': {
-        from: { backgroundColor: theme.palette.primary.main + '22' },
-        to: { backgroundColor: 'transparent' }
-    },
-    messageHighlighted: {
-        animation: '$highlighted 4s ease-out'
-    }
-});
 
 class Message extends Component {
     constructor(props) {
         super(props);
 
         const { chatId, messageId } = this.props;
-        if (process.env.NODE_ENV !== 'production') {
-            this.state = {
-                message: MessageStore.get(chatId, messageId),
-                emojiMatches: getEmojiMatches(chatId, messageId),
-                selected: false,
-                highlighted: false
-            };
-        } else {
-            this.state = {
-                emojiMatches: getEmojiMatches(chatId, messageId),
-                selected: false,
-                highlighted: false
-            };
-        }
+        this.state = {
+            message: MessageStore.get(chatId, messageId),
+            emojiMatches: getEmojiMatches(chatId, messageId),
+            selected: false,
+            highlighted: false,
+            shook: false,
+
+            contextMenu: false,
+            copyLink: null,
+            left: 0,
+            top: 0
+        };
     }
 
     shouldComponentUpdate(nextProps, nextState) {
-        const { theme, chatId, messageId, sendingState, showUnreadSeparator, showTail, showTitle } = this.props;
-        const { contextMenu, selected, highlighted, emojiMatches } = this.state;
-
-        if (nextProps.theme !== theme) {
-            // console.log('Message.shouldComponentUpdate true');
-            return true;
-        }
+        const { chatId, messageId, sendingState, showUnreadSeparator, showTail, showTitle } = this.props;
+        const { contextMenu, selected, highlighted, shook, emojiMatches } = this.state;
 
         if (nextProps.chatId !== chatId) {
-            // console.log('Message.shouldComponentUpdate true');
+            // console.log('Message.shouldComponentUpdate true chatId');
             return true;
         }
 
         if (nextProps.messageId !== messageId) {
-            // console.log('Message.shouldComponentUpdate true');
+            // console.log('Message.shouldComponentUpdate true messageId');
             return true;
         }
 
         if (nextProps.sendingState !== sendingState) {
-            // console.log('Message.shouldComponentUpdate true');
+            // console.log('Message.shouldComponentUpdate true sendingState');
             return true;
         }
 
         if (nextProps.showUnreadSeparator !== showUnreadSeparator) {
-            // console.log('Message.shouldComponentUpdate true');
+            // console.log('Message.shouldComponentUpdate true showUnreadSeparator');
             return true;
         }
 
         if (nextProps.showTail !== showTail) {
-            // console.log('Message.shouldComponentUpdate true');
+            // console.log('Message.shouldComponentUpdate true showTail');
             return true;
         }
 
         if (nextProps.showTitle !== showTitle) {
-            // console.log('Message.shouldComponentUpdate true');
+            // console.log('Message.shouldComponentUpdate true showTitle');
             return true;
         }
 
         if (nextState.contextMenu !== contextMenu) {
-            // console.log('Message.shouldComponentUpdate true');
+            // console.log('Message.shouldComponentUpdate true contextMenu');
             return true;
         }
 
         if (nextState.selected !== selected) {
-            // console.log('Message.shouldComponentUpdate true');
+            // console.log('Message.shouldComponentUpdate true selected');
             return true;
         }
 
         if (nextState.highlighted !== highlighted) {
-            // console.log('Message.shouldComponentUpdate true');
+            // console.log('Message.shouldComponentUpdate true highlighted');
+            return true;
+        }
+
+        if (nextState.shook !== shook) {
+            // console.log('Message.shouldComponentUpdate true shook');
             return true;
         }
 
         if (nextState.emojiMatches !== emojiMatches) {
-            // console.log('Message.shouldComponentUpdate true');
+            // console.log('Message.shouldComponentUpdate true emojiMatches');
             return true;
         }
 
@@ -166,6 +128,7 @@ class Message extends Component {
     componentDidMount() {
         MessageStore.on('clientUpdateMessageHighlighted', this.onClientUpdateMessageHighlighted);
         MessageStore.on('clientUpdateMessageSelected', this.onClientUpdateMessageSelected);
+        MessageStore.on('clientUpdateMessageShake', this.onClientUpdateMessageShake);
         MessageStore.on('clientUpdateClearSelection', this.onClientUpdateClearSelection);
         MessageStore.on('updateMessageContent', this.onUpdateMessageContent);
         MessageStore.on('updateMessageEdited', this.onUpdateMessageEdited);
@@ -175,6 +138,7 @@ class Message extends Component {
     componentWillUnmount() {
         MessageStore.off('clientUpdateMessageHighlighted', this.onClientUpdateMessageHighlighted);
         MessageStore.off('clientUpdateMessageSelected', this.onClientUpdateMessageSelected);
+        MessageStore.off('clientUpdateMessageShake', this.onClientUpdateMessageShake);
         MessageStore.off('clientUpdateClearSelection', this.onClientUpdateClearSelection);
         MessageStore.off('updateMessageContent', this.onUpdateMessageContent);
         MessageStore.off('updateMessageEdited', this.onUpdateMessageEdited);
@@ -185,6 +149,23 @@ class Message extends Component {
         if (!this.state.selected) return;
 
         this.setState({ selected: false });
+    };
+
+    onClientUpdateMessageShake = update => {
+        const { chatId, messageId } = this.props;
+        const { shook } = this.state;
+
+        if (chatId === update.chatId && messageId === update.messageId) {
+            if (shook) {
+                this.setState({ shook: false }, () => {
+                    setTimeout(() => {
+                        this.setState({ shook: true });
+                    }, 0);
+                });
+            } else {
+                this.setState({ shook: true });
+            }
+        }
     };
 
     onClientUpdateMessageHighlighted = update => {
@@ -277,27 +258,16 @@ class Message extends Component {
 
         const { chatId, messageId } = this.props;
 
-        const message = MessageStore.get(chatId, messageId);
-
         const canBeReplied = canSendMessages(chatId);
         if (canBeReplied) {
-            TdLibController.clientUpdate({
-                '@type': 'clientUpdateReply',
-                chatId: chatId,
-                messageId: messageId
-            });
+            replyMessage(chatId, messageId);
+
             return;
         }
 
-        const canBeForwarded = message && message.can_be_forwarded;
+        const canBeForwarded = canMessageBeForwarded(chatId, messageId);
         if (canBeForwarded) {
-            TdLibController.clientUpdate({
-                '@type': 'clientUpdateForward',
-                info: {
-                    chatId: chatId,
-                    messageIds: [messageId]
-                }
-            });
+            forwardMessages(chatId, [messageId]);
         }
     };
 
@@ -333,7 +303,7 @@ class Message extends Component {
         openReply(chatId, messageId);
     };
 
-    handleContextMenu = async event => {
+    handleOpenContextMenu = async event => {
         if (event) {
             event.preventDefault();
             event.stopPropagation();
@@ -350,9 +320,12 @@ class Message extends Component {
 
             const left = event.clientX;
             const top = event.clientY;
+            const copyLink =
+                event.target && event.target.tagName === 'A' && event.target.href ? event.target.href : null;
 
             this.setState({
                 contextMenu: true,
+                copyLink,
                 left,
                 top
             });
@@ -367,189 +340,152 @@ class Message extends Component {
         this.setState({ contextMenu: false });
     };
 
-    handleReply = event => {
-        const { chatId, messageId } = this.props;
-
-        clearSelection();
-        this.handleCloseContextMenu(event);
-
-        replyMessage(chatId, messageId);
-    };
-
-    handlePin = event => {
-        const { chatId, messageId } = this.props;
-
-        clearSelection();
-        this.handleCloseContextMenu(event);
-
-        if (isMessagePinned(chatId, messageId)) {
-            unpinMessage(chatId);
-        } else {
-            pinMessage(chatId, messageId);
-        }
-    };
-
-    handleForward = event => {
-        const { chatId, messageId } = this.props;
-
-        this.handleCloseContextMenu(event);
-
-        forwardMessages(chatId, [messageId]);
-    };
-
-    handleEdit = event => {
-        const { chatId, messageId } = this.props;
-
-        clearSelection();
-        this.handleCloseContextMenu(event);
-
-        editMessage(chatId, messageId);
-    };
-
-    handleSelect = event => {
-        const { chatId, messageId } = this.props;
-
-        this.handleCloseContextMenu(event);
-
-        selectMessage(chatId, messageId, true);
-    };
-
-    handleDelete = event => {
-        const { chatId, messageId } = this.props;
-
-        this.handleCloseContextMenu(event);
-
-        deleteMessages(chatId, [messageId]);
-    };
-
     render() {
-        // console.log('[m] render', this.props.messageId);
-        const { t, classes, chatId, messageId, showUnreadSeparator, showTail, showTitle } = this.props;
-        const { emojiMatches, selected, highlighted, contextMenu, left, top } = this.state;
+        const { t, chatId, messageId, showUnreadSeparator, showTail, showTitle, showDate } = this.props;
+        const {
+            emojiMatches,
+            selected,
+            highlighted,
+            shook,
+            copyLink,
+            contextMenu,
+            left,
+            top
+        } = this.state;
+
+        // console.log('Message.render', messageId);
 
         const message = MessageStore.get(chatId, messageId);
         if (!message) return <div>[empty message]</div>;
 
-        const {
-            is_outgoing,
-            sending_state,
-            views,
-            date,
-            edit_date,
-            reply_to_message_id,
-            forward_info,
-            sender_user_id
-        } = message;
+        const { is_outgoing, views, date, edit_date, reply_to_message_id, forward_info, sender_user_id } = message;
 
-        const showForward = showMessageForward(chatId, messageId);
-        const text = getText(message);
-        const hasTitle = showTitle || showForward || Boolean(reply_to_message_id);
+        const isOutgoing = is_outgoing && !isChannelChat(chatId);
+        const inlineMeta = (
+            <Meta
+                className='meta-hidden'
+                key={`${chatId}_${messageId}_meta`}
+                chatId={chatId}
+                messageId={messageId}
+                date={date}
+                editDate={edit_date}
+                views={views}
+            />
+        );
+        const text = getText(message, inlineMeta, t);
         const hasCaption = text !== null && text.length > 0;
+        const showForward = showMessageForward(chatId, messageId);
+        const showReply = Boolean(reply_to_message_id);
+        const suppressTitle = isPrivateChat(chatId);
+        const hasTitle = (!suppressTitle && showTitle) || showForward || showReply;
         const webPage = getWebPage(message);
-        const media = getMedia(message, this.openMedia, hasTitle, hasCaption);
-        this.unread = getUnread(message);
+        const media = getMedia(message, this.openMedia, hasTitle, hasCaption, inlineMeta);
 
         let tile = null;
         if (showTail) {
             tile = sender_user_id ? (
-                <UserTile userId={sender_user_id} onSelect={this.handleSelectUser} small />
+                <UserTile small userId={sender_user_id} onSelect={this.handleSelectUser} />
             ) : (
-                <ChatTile chatId={chatId} onSelect={this.handleSelectChat} small />
+                <ChatTile small chatId={chatId} onSelect={this.handleSelectChat} />
             );
         }
 
-        const messageClassName = classNames('message', classes.message, {
-            'message-selected': selected,
-            [classes.messageSelected]: selected,
-            [classes.messageHighlighted]: highlighted && !selected,
-            'message-short': !tile
-        });
-
-        const meta = <Meta date={date} editDate={edit_date} views={views} onDateClick={this.handleDateClick} />;
-
-        const canBeReplied = canSendMessages(chatId);
-        const canBePinned = canPinMessages(chatId);
-        const isPinned = isMessagePinned(chatId, messageId);
-        const canBeForwarded = message.can_be_forwarded;
-        const canBeDeleted = message.can_be_deleted_only_for_self || message.can_be_deleted_for_all_users;
-        const canBeSelected = !MessageStore.hasSelectedMessage(chatId, messageId);
-        const canBeEdited = canMessageBeEdited(chatId, messageId);
+        const style = getMessageStyle(chatId, messageId);
         const withBubble =
             message.content['@type'] !== 'messageSticker' && message.content['@type'] !== 'messageVideoNote';
 
         return (
-            <div
-                className={messageClassName}
-                onMouseOver={this.handleMouseOver}
-                onMouseOut={this.handleMouseOut}
-                onMouseDown={this.handleMouseDown}
-                onClick={this.handleSelection}
-                onAnimationEnd={this.handleAnimationEnd}
-                onContextMenu={this.handleContextMenu}>
-                {showUnreadSeparator && <UnreadSeparator />}
-                <div className='message-wrapper'>
-                    <div className='message-left-padding'>
-                        <CheckMarkIcon className={classNames('message-select-tick', classes.messageSelectTick)} />
-                        {/*{this.unread && (*/}
-                        {/*    <MessageStatus chatId={chatId} messageId={messageId} sendingState={sending_state} />*/}
-                        {/*)}*/}
-                    </div>
-                    {tile}
-                    <div
-                        className={classNames('message-content', {
-                            'message-bubble': withBubble,
-                            'message-bubble-out': withBubble && is_outgoing
-                        })}>
-                        <div className='message-title'>
-                            {showTitle && !showForward && (
-                                <MessageAuthor chatId={chatId} openChat userId={sender_user_id} openUser />
-                            )}
-                            {showForward && <Forward forwardInfo={forward_info} />}
-                            {showTitle && meta}
+            <div>
+                {showDate && <DayMeta date={date} />}
+                <div
+                    className={classNames('message', {
+                        'message-short': !tile,
+                        'message-out': isOutgoing,
+                        'message-selected': selected,
+                        'message-highlighted': highlighted && !selected,
+                        'message-top': showTitle && !showTail,
+                        'message-bottom': !showTitle && showTail,
+                        'message-middle': !showTitle && !showTail,
+                        'message-bubble-hidden': !withBubble
+                    })}
+                    onMouseOver={this.handleMouseOver}
+                    onMouseOut={this.handleMouseOut}
+                    onMouseDown={this.handleMouseDown}
+                    onClick={this.handleSelection}
+                    onAnimationEnd={this.handleAnimationEnd}
+                    onContextMenu={this.handleOpenContextMenu}>
+                    {showUnreadSeparator && <UnreadSeparator />}
+                    <div className='message-body'>
+                        <div className='message-padding'>
+                            <CheckMarkIcon className='message-select-tick' />
                         </div>
-                        {Boolean(reply_to_message_id) && (
-                            <Reply chatId={chatId} messageId={reply_to_message_id} onClick={this.handleReplyClick} />
-                        )}
-                        {media}
-                        <div
-                            className={classNames('message-text', {
-                                'message-text-1emoji': emojiMatches === 1,
-                                'message-text-2emoji': emojiMatches === 2,
-                                'message-text-3emoji': emojiMatches === 3
-                            })}>
-                            {text}
+                        <div className={classNames('message-wrapper', { 'message-wrapper-shook': shook })}>
+                            {tile}
+                            <div
+                                className={classNames('message-content', {
+                                    'message-bubble': withBubble,
+                                    'message-bubble-out': withBubble && isOutgoing
+                                })}
+                                style={style}>
+                                {withBubble && ((showTitle && !suppressTitle) || showForward) && (
+                                    <div className='message-title'>
+                                        {showTitle && !showForward && (
+                                            <MessageAuthor chatId={chatId} openChat userId={sender_user_id} openUser />
+                                        )}
+                                        {showForward && <Forward forwardInfo={forward_info} />}
+                                    </div>
+                                )}
+                                {showReply && (
+                                    <Reply
+                                        chatId={chatId}
+                                        messageId={reply_to_message_id}
+                                        onClick={this.handleReplyClick}
+                                    />
+                                )}
+                                {media}
+                                <div
+                                    className={classNames('message-text', {
+                                        'message-text-1emoji': emojiMatches === 1,
+                                        'message-text-2emoji': emojiMatches === 2,
+                                        'message-text-3emoji': emojiMatches === 3
+                                    })}>
+                                    {text}
+                                </div>
+                                {webPage && (
+                                    <WebPage
+                                        chatId={chatId}
+                                        messageId={messageId}
+                                        openMedia={this.openMedia}
+                                        meta={inlineMeta}
+                                    />
+                                )}
+                                {withBubble && (
+                                    <Meta
+                                        className={classNames('meta-text', {
+                                            'meta-bubble': isMetaBubble(chatId, messageId)
+                                        })}
+                                        chatId={chatId}
+                                        messageId={messageId}
+                                        date={date}
+                                        editDate={edit_date}
+                                        views={views}
+                                        onDateClick={this.handleDateClick}
+                                    />
+                                )}
+                            </div>
+                            <div className='message-tile-padding' />
                         </div>
-                        {webPage && <WebPage chatId={chatId} messageId={messageId} openMedia={this.openMedia} />}
-                        {/*{!showTitle && meta}*/}
+                        <div className='message-padding' />
                     </div>
-                    {/*{!showTitle && meta}*/}
-                    {/*{showTail&&<div>tail</div>}*/}
                 </div>
-                <Popover
+                <MessageMenu
+                    chatId={chatId}
+                    messageId={messageId}
+                    anchorPosition={{ top, left }}
                     open={contextMenu}
                     onClose={this.handleCloseContextMenu}
-                    anchorReference='anchorPosition'
-                    anchorPosition={{ top, left }}
-                    anchorOrigin={{
-                        vertical: 'bottom',
-                        horizontal: 'right'
-                    }}
-                    transformOrigin={{
-                        vertical: 'top',
-                        horizontal: 'left'
-                    }}
-                    onMouseDown={e => e.stopPropagation()}>
-                    <MenuList classes={{ root: classes.menuListRoot }} onClick={e => e.stopPropagation()}>
-                        {canBeReplied && <MenuItem onClick={this.handleReply}>{t('Reply')}</MenuItem>}
-                        {canBePinned && (
-                            <MenuItem onClick={this.handlePin}>{isPinned ? t('Unpin') : t('Pin')}</MenuItem>
-                        )}
-                        {canBeSelected && <MenuItem onClick={this.handleSelect}>{t('Select')}</MenuItem>}
-                        {canBeForwarded && <MenuItem onClick={this.handleForward}>{t('Forward')}</MenuItem>}
-                        {canBeEdited && <MenuItem onClick={this.handleEdit}>{t('Edit')}</MenuItem>}
-                        {canBeDeleted && <MenuItem onClick={this.handleDelete}>{t('Delete')}</MenuItem>}
-                    </MenuList>
-                </Popover>
+                    copyLink={copyLink}
+                />
             </div>
         );
     }
@@ -557,7 +493,6 @@ class Message extends Component {
 
 const enhance = compose(
     withSaveRef(),
-    withStyles(styles, { withTheme: true }),
     withTranslation(),
     withRestoreRef()
 );

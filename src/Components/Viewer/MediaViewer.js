@@ -9,6 +9,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import classNames from 'classnames';
 import { withTranslation } from 'react-i18next';
+import KeyboardManager, { KeyboardHandler } from '../Additional/KeyboardManager';
 import Button from '@material-ui/core/Button';
 import Checkbox from '@material-ui/core/Checkbox';
 import CloseIcon from '../../Assets/Icons/Close';
@@ -21,13 +22,13 @@ import DialogTitle from '@material-ui/core/DialogTitle';
 import FormControlLabel from '@material-ui/core/FormControlLabel';
 import NavigateBeforeIcon from '../../Assets/Icons/Left';
 import ReplyIcon from '../../Assets/Icons/Share';
-import MediaViewerControl from '../Tile/MediaViewerControl';
+import MediaInfo from '../Tile/MediaInfo';
 import MediaViewerContent from './MediaViewerContent';
 import MediaViewerButton from './MediaViewerButton';
 import MediaViewerFooterText from './MediaViewerFooterText';
 import MediaViewerFooterButton from './MediaViewerFooterButton';
 import MediaViewerDownloadButton from './MediaViewerDownloadButton';
-import { setMediaViewerContent } from '../../Actions/Client';
+import { forwardMessages, setMediaViewerContent } from '../../Actions/Client';
 import {
     cancelPreloadMediaViewerContent,
     getMediaFile,
@@ -52,7 +53,7 @@ class MediaViewer extends React.Component {
     constructor(props) {
         super(props);
 
-        this.contentRef = React.createRef();
+        this.keyboardHandler = new KeyboardHandler(this.onKeyDown);
         this.history = [];
 
         const { chatId, messageId } = this.props;
@@ -129,14 +130,14 @@ class MediaViewer extends React.Component {
     componentDidMount() {
         this.loadHistory();
 
-        document.addEventListener('keydown', this.onKeyDown, false);
+        KeyboardManager.add(this.keyboardHandler);
         MessageStore.on('updateDeleteMessages', this.onUpdateDeleteMessages);
         MessageStore.on('updateNewMessage', this.onUpdateNewMessage);
         MessageStore.on('updateMessageContent', this.onUpdateMessageContent);
     }
 
     componentWillUnmount() {
-        document.removeEventListener('keydown', this.onKeyDown, false);
+        KeyboardManager.remove(this.keyboardHandler);
         MessageStore.off('updateDeleteMessages', this.onUpdateDeleteMessages);
         MessageStore.off('updateNewMessage', this.onUpdateNewMessage);
         MessageStore.off('updateMessageContent', this.onUpdateMessageContent);
@@ -471,13 +472,7 @@ class MediaViewer extends React.Component {
         const { chatId } = this.props;
         const { currentMessageId } = this.state;
 
-        TdLibController.clientUpdate({
-            '@type': 'clientUpdateForward',
-            info: {
-                chatId: chatId,
-                messageIds: [currentMessageId]
-            }
-        });
+        forwardMessages(chatId, [currentMessageId]);
     };
 
     handleDelete = () => {
@@ -715,20 +710,6 @@ class MediaViewer extends React.Component {
         });
     };
 
-    handleChangeSpeed = () => {
-        if (!this.contentRef) return;
-
-        const { current } = this.contentRef;
-        if (!current) return;
-
-        const { speed } = this.state;
-        const nextSpeed = speed < 1 ? 1 : 0.1;
-
-        this.setState({ speed: nextSpeed });
-
-        current.changeSpeed(nextSpeed);
-    };
-
     canBeForwarded = (chatId, messageId) => {
         const message = MessageStore.get(chatId, messageId);
         if (!message) return false;
@@ -810,7 +791,7 @@ class MediaViewer extends React.Component {
             </Dialog>
         ) : null;
 
-        const [width, height, file] = getMediaFile(chatId, currentMessageId, PHOTO_BIG_SIZE);
+        const [width, height, file, mimeType] = getMediaFile(chatId, currentMessageId, PHOTO_BIG_SIZE);
 
         const fileId = file ? file.id : 0;
         let title = t('AttachPhoto');
@@ -825,7 +806,7 @@ class MediaViewer extends React.Component {
         return (
             <div className={classNames('media-viewer', background)}>
                 <div className='media-viewer-footer'>
-                    <MediaViewerControl chatId={chatId} messageId={currentMessageId} />
+                    <MediaInfo chatId={chatId} messageId={currentMessageId} />
                     <MediaViewerFooterText
                         title={title}
                         subtitle={maxCount && index >= 0 ? `${maxCount - index} of ${maxCount}` : null}
@@ -853,7 +834,6 @@ class MediaViewer extends React.Component {
 
                     <div className='media-viewer-content-column'>
                         <MediaViewerContent
-                            ref={this.contentRef}
                             chatId={chatId}
                             messageId={currentMessageId}
                             size={PHOTO_BIG_SIZE}

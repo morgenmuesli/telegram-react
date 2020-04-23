@@ -6,15 +6,12 @@
  */
 
 import React from 'react';
-import classNames from 'classnames';
-import { compose } from 'recompose';
 import { withTranslation } from 'react-i18next';
-import withStyles from '@material-ui/core/styles/withStyles';
-import PlayArrowIcon from '@material-ui/icons/PlayArrow';
-import PauseIcon from '@material-ui/icons/Pause';
+import PlayArrowIcon from '../../Assets/Icons/PlayArrow';
+import PauseIcon from '../../Assets/Icons/Pause';
 import SkipNextIcon from '@material-ui/icons/SkipNext';
 import SkipPreviousIcon from '@material-ui/icons/SkipPrevious';
-import CloseIcon from '@material-ui/icons/Close';
+import CloseIcon from '../../Assets/Icons/Close';
 import IconButton from '@material-ui/core/IconButton';
 import VolumeButton from '../Player/VolumeButton';
 import RepeatButton from '../Player/RepeatButton';
@@ -22,7 +19,6 @@ import ShuffleButton from '../Player/ShuffleButton';
 import PlaybackRateButton from './PlaybackRateButton';
 import Time from '../Player/Time';
 import Playlist from '../Player/Playlist';
-import { borderStyle } from '../Theme';
 import { getSrc } from '../../Utils/File';
 import { openChat } from '../../Actions/Client';
 import { getDurationString } from '../../Utils/Common';
@@ -30,16 +26,9 @@ import { getDate, getDateHint, getMediaTitle, hasAudio } from '../../Utils/Messa
 import { PLAYER_PLAYBACKRATE_FAST, PLAYER_PLAYBACKRATE_NORMAL, PLAYER_STARTTIME } from '../../Constants';
 import PlayerStore from '../../Stores/PlayerStore';
 import FileStore from '../../Stores/FileStore';
-import ApplicationStore from '../../Stores/ApplicationStore';
+import AppStore from '../../Stores/ApplicationStore';
 import TdLibController from '../../Controllers/TdLibController';
 import './HeaderPlayer.css';
-
-const styles = theme => ({
-    iconButton: {
-        padding: 4
-    },
-    ...borderStyle(theme)
-});
 
 class HeaderPlayer extends React.Component {
     constructor(props) {
@@ -57,7 +46,8 @@ class HeaderPlayer extends React.Component {
             message: message,
             playlist: playlist,
             playing: false,
-            src: this.getMediaSrc(message)
+            src: this.getMediaSrc(message),
+            mimeType: this.getMediaMimeType(message)
         };
     }
 
@@ -100,8 +90,9 @@ class HeaderPlayer extends React.Component {
         PlayerStore.on('clientUpdateMediaViewerEnded', this.onClientUpdateMediaViewerEnded);
         PlayerStore.on('clientUpdateMediaVolume', this.onClientUpdateMediaVolume);
         PlayerStore.on('clientUpdateMediaPlaybackRate', this.onClientUpdateMediaPlaybackRate);
+        PlayerStore.on('clientUpdateMediaSeek', this.onClientUpdateMediaSeek);
 
-        ApplicationStore.on('clientUpdateMediaViewerContent', this.onClientUpdateMediaViewerContent);
+        AppStore.on('clientUpdateMediaViewerContent', this.onClientUpdateMediaViewerContent);
     }
 
     componentWillUnmount() {
@@ -116,8 +107,9 @@ class HeaderPlayer extends React.Component {
         PlayerStore.off('clientUpdateMediaViewerEnded', this.onClientUpdateMediaViewerEnded);
         PlayerStore.off('clientUpdateMediaVolume', this.onClientUpdateMediaVolume);
         PlayerStore.off('clientUpdateMediaPlaybackRate', this.onClientUpdateMediaPlaybackRate);
+        PlayerStore.off('clientUpdateMediaSeek', this.onClientUpdateMediaSeek);
 
-        ApplicationStore.off('clientUpdateMediaViewerContent', this.onClientUpdateMediaViewerContent);
+        AppStore.off('clientUpdateMediaViewerContent', this.onClientUpdateMediaViewerContent);
     }
 
     onClientUpdateMediaPlaybackRate = update => {
@@ -138,8 +130,25 @@ class HeaderPlayer extends React.Component {
         player.volume = volume;
     };
 
+    onClientUpdateMediaSeek = update => {
+        const { chatId, messageId, value } = update;
+        const { message } = this.state;
+
+        if (!message) return;
+
+        const { chat_id, id, content } = message;
+        if (!content) return;
+        if (chatId !== chat_id || messageId !== id) return;
+
+        const player = this.videoRef.current;
+        if (!player) return;
+        if (!player.duration) return;
+
+        player.currentTime = value * player.duration;
+    };
+
     onClientUpdateMediaViewerContent = update => {
-        this.playingMediaViewer = Boolean(ApplicationStore.mediaViewerContent);
+        this.playingMediaViewer = Boolean(AppStore.mediaViewerContent);
     };
 
     onClientUpdateMediaViewerEnded = update => {
@@ -159,25 +168,42 @@ class HeaderPlayer extends React.Component {
         player.pause();
     };
 
-    startPlayingFile = (file, message) => {
+    startPlayingFile = message => {
         const { chat_id, id } = message;
+
+        const { src: prevSrc } = this.state;
+
+        const src = this.getMediaSrc(message);
+        const mimeType = this.getMediaMimeType(message);
+        const playing = Boolean(src);
+        const { playlist } = PlayerStore;
 
         this.setState(
             {
-                src: this.getMediaSrc(message)
+                message,
+                playlist,
+                playing,
+                src,
+                mimeType
             },
             () => {
                 const player = this.videoRef.current;
-                if (player) {
-                    if (this.playingMediaViewer) {
-                        player.pause();
+                if (!player) return;
 
-                        TdLibController.clientUpdate({
-                            '@type': 'clientUpdateMediaPause',
-                            chatId: chat_id,
-                            messageId: id
-                        });
-                    }
+                if (prevSrc !== src) {
+                    player.load();
+                }
+                player.currentTime = this.startTime;
+                if (this.playingMediaViewer) {
+                    player.pause();
+
+                    TdLibController.clientUpdate({
+                        '@type': 'clientUpdateMediaPause',
+                        chatId: chat_id,
+                        messageId: id
+                    });
+                } else if (player.paused) {
+                    player.play();
                 }
             }
         );
@@ -202,21 +228,21 @@ class HeaderPlayer extends React.Component {
                     if (audio) {
                         const file = audio.audio;
                         if (file) {
-                            this.startPlayingFile(file, message);
+                            this.startPlayingFile(message);
                         }
                     }
 
                     if (voice_note) {
                         const { voice } = voice_note;
                         if (voice) {
-                            this.startPlayingFile(voice, message);
+                            this.startPlayingFile(message);
                         }
                     }
 
                     if (video_note) {
                         const { video } = video_note;
                         if (video) {
-                            this.startPlayingFile(video, message);
+                            this.startPlayingFile(message);
                         }
                     }
                 }
@@ -228,7 +254,7 @@ class HeaderPlayer extends React.Component {
                 if (audio) {
                     const file = audio.audio;
                     if (file) {
-                        this.startPlayingFile(file, message);
+                        this.startPlayingFile(message);
                     }
                 }
 
@@ -239,7 +265,7 @@ class HeaderPlayer extends React.Component {
                 if (voice_note) {
                     const { voice } = voice_note;
                     if (voice) {
-                        this.startPlayingFile(voice, message);
+                        this.startPlayingFile(message);
                     }
                 }
 
@@ -250,7 +276,7 @@ class HeaderPlayer extends React.Component {
                 if (video_note) {
                     const { video } = video_note;
                     if (video) {
-                        this.startPlayingFile(video, message);
+                        this.startPlayingFile(message);
                     }
                 }
 
@@ -274,7 +300,8 @@ class HeaderPlayer extends React.Component {
             message: null,
             playlist: null,
             playing: false,
-            src: null
+            src: null,
+            mimeType: null
         });
     };
 
@@ -283,41 +310,18 @@ class HeaderPlayer extends React.Component {
         const { message, src } = this.state;
 
         if (message && message.chat_id === chatId && message.id === messageId) {
-            if (src) {
-                const player = this.videoRef.current;
-                if (player) {
-                    if (player.paused) {
-                        player.play();
-                    } else {
-                        player.pause();
-                    }
-                }
+            if (!src) return;
+
+            const player = this.videoRef.current;
+            if (!player) return;
+
+            if (player.paused) {
+                player.play();
+            } else {
+                player.pause();
             }
         } else {
-            const src = this.getMediaSrc(PlayerStore.message);
-            const playing = Boolean(src);
-            const playlist = PlayerStore.playlist;
-            this.setState(
-                {
-                    message: PlayerStore.message,
-                    playlist: PlayerStore.playlist,
-                    playing: playing,
-                    src: src
-                },
-                () => {
-                    const player = this.videoRef.current;
-                    if (player) {
-                        player.currentTime = this.startTime;
-                        if (this.playingMediaViewer) {
-                            player.pause();
-
-                            //this.handleVideoPause();
-                        } else if (player.paused) {
-                            player.play();
-                        }
-                    }
-                }
-            );
+            this.startPlayingFile(PlayerStore.message);
         }
     };
 
@@ -342,6 +346,43 @@ class HeaderPlayer extends React.Component {
         TdLibController.clientUpdate({
             '@type': 'clientUpdateMediaNext'
         });
+    };
+
+    getMediaMimeType = message => {
+        if (message) {
+            const { content } = message;
+            if (content) {
+                const { audio, voice_note, video_note, web_page } = content;
+
+                if (audio) {
+                    return audio.mime_type;
+                }
+
+                if (voice_note) {
+                    return voice_note.mime_type;
+                }
+
+                if (video_note) {
+                    return 'video/mp4';
+                }
+
+                if (web_page) {
+                    if (web_page.audio) {
+                        return web_page.audio.mime_type;
+                    }
+
+                    if (web_page.voice_note) {
+                        return web_page.voice_note.mime_type;
+                    }
+
+                    if (web_page.video_note) {
+                        return 'video/mp4';
+                    }
+                }
+            }
+        }
+
+        return '';
     };
 
     getMediaSrc = message => {
@@ -610,8 +651,8 @@ class HeaderPlayer extends React.Component {
     };
 
     render() {
-        const { classes } = this.props;
-        const { playing, message, playlist, src } = this.state;
+        const { t } = this.props;
+        const { playing, message, playlist, src, mimeType } = this.state;
 
         let audio = false;
         if (message) {
@@ -621,7 +662,7 @@ class HeaderPlayer extends React.Component {
 
         const date = message ? message.date : null;
 
-        const title = getMediaTitle(message);
+        const title = getMediaTitle(message, t);
         const dateHintStr = getDateHint(date);
         const dateStr = getDate(date);
         const showDate = !audio;
@@ -631,12 +672,13 @@ class HeaderPlayer extends React.Component {
         const hasPrev = this.hasPrev(message, playlist);
         const hasNext = this.hasNext(message, playlist);
 
+        const source = src ? <source src={src} type={mimeType}/> : null;
+
         return (
             <>
                 <video
                     className='header-player-video'
                     ref={this.videoRef}
-                    src={src}
                     autoPlay={true}
                     controls={false}
                     width={44}
@@ -646,18 +688,20 @@ class HeaderPlayer extends React.Component {
                     onPause={this.handleVideoPause}
                     onTimeUpdate={this.handleTimeUpdate}
                     onEnded={this.handleVideoEnded}
-                />
+                >
+                    {source}
+                </video>
                 {message && (
-                    <div className={classNames(classes.borderColor, 'header-player')}>
+                    <div className='header-player'>
                         <IconButton
                             disabled={!hasPrev}
-                            className={classes.iconButton}
+                            className='header-player-button'
                             color='primary'
                             onClick={this.handlePrev}>
                             <SkipPreviousIcon fontSize='small' />
                         </IconButton>
                         <IconButton
-                            className={classes.iconButton}
+                            className='header-player-button'
                             color='primary'
                             disabled={!src}
                             onClick={this.handlePlay}>
@@ -665,7 +709,7 @@ class HeaderPlayer extends React.Component {
                         </IconButton>
                         <IconButton
                             disabled={!hasNext}
-                            className={classes.iconButton}
+                            className='header-player-button'
                             color='primary'
                             onClick={this.handleNext}>
                             <SkipNextIcon fontSize='small' />
@@ -692,7 +736,7 @@ class HeaderPlayer extends React.Component {
                         {showPlaybackRate && <PlaybackRateButton />}
                         {showRepeat && <RepeatButton />}
                         {showShuffle && <ShuffleButton />}
-                        <IconButton className={classes.iconButton} onClick={this.handleClose}>
+                        <IconButton className='header-player-button' onClick={this.handleClose}>
                             <CloseIcon fontSize='small' />
                         </IconButton>
                     </div>
@@ -702,9 +746,4 @@ class HeaderPlayer extends React.Component {
     }
 }
 
-const enhance = compose(
-    withTranslation(),
-    withStyles(styles, { withTheme: true })
-);
-
-export default enhance(HeaderPlayer);
+export default withTranslation()(HeaderPlayer);

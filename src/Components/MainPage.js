@@ -7,35 +7,23 @@
 
 import React from 'react';
 import classNames from 'classnames';
-import { compose } from 'recompose';
-import withStyles from '@material-ui/core/styles/withStyles';
+import { compose } from '../Utils/HOC';
 import withLanguage from '../Language';
-import withTheme from '../Theme';
 import withSnackbarNotifications from '../Notifications';
 import ForwardDialog from './Popup/ForwardDialog';
 import ChatInfo from './ColumnRight/ChatInfo';
 import Dialogs from './ColumnLeft/Dialogs';
 import DialogDetails from './ColumnMiddle/DialogDetails';
-import Footer from './Footer';
 import InstantViewer from './InstantView/InstantViewer';
 import MediaViewer from './Viewer/MediaViewer';
 import ProfileMediaViewer from './Viewer/ProfileMediaViewer';
-import { borderStyle } from './Theme';
 import { highlightMessage } from '../Actions/Client';
-import ApplicationStore from '../Stores/ApplicationStore';
+import AppStore from '../Stores/ApplicationStore';
 import ChatStore from '../Stores/ChatStore';
 import InstantViewStore from '../Stores/InstantViewStore';
 import UserStore from '../Stores/UserStore';
 import TdLibController from '../Controllers/TdLibController';
 import '../TelegramApp.css';
-
-const styles = theme => ({
-    page: {
-        background: theme.palette.type === 'dark' ? theme.palette.background.default : '#FFFFFF',
-        color: theme.palette.text.primary
-    },
-    ...borderStyle(theme)
-});
 
 class MainPage extends React.Component {
     constructor(props) {
@@ -43,10 +31,13 @@ class MainPage extends React.Component {
 
         this.dialogDetailsRef = React.createRef();
 
+        const { isChatDetailsVisible, mediaViewerContent, profileMediaViewerContent, isSmallWidth } = AppStore;
+
         this.state = {
-            isChatDetailsVisible: ApplicationStore.isChatDetailsVisible,
-            mediaViewerContent: ApplicationStore.mediaViewerContent,
-            profileMediaViewerContent: ApplicationStore.profileMediaViewerContent,
+            isChatDetailsVisible,
+            mediaViewerContent,
+            profileMediaViewerContent,
+            isSmallWidth,
             forwardInfo: null,
             instantViewContent: null
         };
@@ -62,10 +53,11 @@ class MainPage extends React.Component {
         UserStore.on('clientUpdateOpenUser', this.onClientUpdateOpenUser);
         ChatStore.on('clientUpdateOpenChat', this.onClientUpdateOpenChat);
 
-        ApplicationStore.on('clientUpdateChatDetailsVisibility', this.onClientUpdateChatDetailsVisibility);
-        ApplicationStore.on('clientUpdateMediaViewerContent', this.onClientUpdateMediaViewerContent);
-        ApplicationStore.on('clientUpdateProfileMediaViewerContent', this.onClientUpdateProfileMediaViewerContent);
-        ApplicationStore.on('clientUpdateForward', this.onClientUpdateForward);
+        AppStore.on('clientUpdateChatDetailsVisibility', this.onClientUpdateChatDetailsVisibility);
+        AppStore.on('clientUpdateMediaViewerContent', this.onClientUpdateMediaViewerContent);
+        AppStore.on('clientUpdatePageWidth', this.onClientUpdatePageWidth);
+        AppStore.on('clientUpdateProfileMediaViewerContent', this.onClientUpdateProfileMediaViewerContent);
+        AppStore.on('clientUpdateForward', this.onClientUpdateForward);
         InstantViewStore.on('clientUpdateInstantViewContent', this.onClientUpdateInstantViewContent);
     }
 
@@ -73,12 +65,19 @@ class MainPage extends React.Component {
         UserStore.off('clientUpdateOpenUser', this.onClientUpdateOpenUser);
         ChatStore.off('clientUpdateOpenChat', this.onClientUpdateOpenChat);
 
-        ApplicationStore.off('clientUpdateChatDetailsVisibility', this.onClientUpdateChatDetailsVisibility);
-        ApplicationStore.off('clientUpdateMediaViewerContent', this.onClientUpdateMediaViewerContent);
-        ApplicationStore.off('clientUpdateProfileMediaViewerContent', this.onClientUpdateProfileMediaViewerContent);
-        ApplicationStore.off('clientUpdateForward', this.onClientUpdateForward);
+        AppStore.off('clientUpdateChatDetailsVisibility', this.onClientUpdateChatDetailsVisibility);
+        AppStore.off('clientUpdateMediaViewerContent', this.onClientUpdateMediaViewerContent);
+        AppStore.off('clientUpdatePageWidth', this.onClientUpdatePageWidth);
+        AppStore.off('clientUpdateProfileMediaViewerContent', this.onClientUpdateProfileMediaViewerContent);
+        AppStore.off('clientUpdateForward', this.onClientUpdateForward);
         InstantViewStore.off('clientUpdateInstantViewContent', this.onClientUpdateInstantViewContent);
     }
+
+    onClientUpdatePageWidth = update => {
+        const { isSmallWidth } = update;
+
+        this.setState({ isSmallWidth });
+    };
 
     onClientUpdateInstantViewContent = update => {
         const { content } = update;
@@ -101,19 +100,21 @@ class MainPage extends React.Component {
     };
 
     onClientUpdateChatDetailsVisibility = update => {
-        this.setState({
-            isChatDetailsVisible: ApplicationStore.isChatDetailsVisible
-        });
+        const { isChatDetailsVisible } = AppStore;
+
+        this.setState({ isChatDetailsVisible });
     };
 
     onClientUpdateMediaViewerContent = update => {
-        this.setState({ mediaViewerContent: ApplicationStore.mediaViewerContent });
+        const { mediaViewerContent } = AppStore;
+
+        this.setState({ mediaViewerContent });
     };
 
     onClientUpdateProfileMediaViewerContent = update => {
-        this.setState({
-            profileMediaViewerContent: ApplicationStore.profileMediaViewerContent
-        });
+        const { profileMediaViewerContent } = AppStore;
+
+        this.setState({ profileMediaViewerContent });
     };
 
     onClientUpdateForward = update => {
@@ -123,9 +124,9 @@ class MainPage extends React.Component {
     };
 
     handleSelectChat = (chatId, messageId = null, popup = false) => {
-        const currentChatId = ApplicationStore.getChatId();
-        const currentDialogChatId = ApplicationStore.dialogChatId;
-        const currentMessageId = ApplicationStore.getMessageId();
+        const currentChatId = AppStore.getChatId();
+        const currentDialogChatId = AppStore.dialogChatId;
+        const currentMessageId = AppStore.getMessageId();
 
         if (popup) {
             if (currentDialogChatId !== chatId) {
@@ -163,19 +164,20 @@ class MainPage extends React.Component {
     };
 
     render() {
-        const { classes } = this.props;
         const {
             instantViewContent,
             isChatDetailsVisible,
             mediaViewerContent,
             profileMediaViewerContent,
-            forwardInfo
+            forwardInfo,
+            isSmallWidth
         } = this.state;
 
         return (
             <>
                 <div
-                    className={classNames(classes.page, classes.borderColor, 'page', {
+                    className={classNames('page', {
+                        'page-small': isSmallWidth,
                         'page-third-column': isChatDetailsVisible
                     })}>
                     <Dialogs />
@@ -195,8 +197,6 @@ MainPage.propTypes = {};
 
 const enhance = compose(
     withLanguage,
-    withTheme,
-    withStyles(styles),
     withSnackbarNotifications
 );
 

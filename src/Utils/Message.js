@@ -6,47 +6,91 @@
  */
 
 import React from 'react';
-import dateFormat from 'dateformat';
 import emojiRegex from 'emoji-regex';
-import Audio from '../Components/Message/Media/Audio';
-import Animation from '../Components/Message/Media/Animation';
-import Contact from '../Components/Message/Media/Contact';
-import Document from '../Components/Message/Media/Document';
-import Game from '../Components/Message/Media/Game';
-import Location from '../Components/Message/Media/Location';
 import MentionLink from '../Components/Additional/MentionLink';
-import Photo from '../Components/Message/Media/Photo';
 import Poll from '../Components/Message/Media/Poll';
 import SafeLink from '../Components/Additional/SafeLink';
-import Sticker, { StickerSourceEnum } from '../Components/Message/Media/Sticker';
-import Venue from '../Components/Message/Media/Venue';
-import Video from '../Components/Message/Media/Video';
-import VideoNote from '../Components/Message/Media/VideoNote';
-import VoiceNote from '../Components/Message/Media/VoiceNote';
+import dateFormat from '../Utils/Date';
 import { searchChat, setMediaViewerContent } from '../Actions/Client';
-import {
-    getChatDisableMentionNotifications,
-    getChatDisablePinnedMessageNotifications,
-    getChatTitle,
-    isChatMuted
-} from './Chat';
+import { getChatTitle, isMeChat } from './Chat';
 import { openUser } from './../Actions/Client';
-import { getPhotoSize } from './Common';
+import { getFitSize, getPhotoSize, getSize } from './Common';
 import { download, saveOrDownload } from './File';
 import { getAudioTitle } from './Media';
 import { getDecodedUrl } from './Url';
 import { getServiceMessageContent } from './ServiceMessage';
 import { getUserFullName } from './User';
-import { LOCATION_HEIGHT, LOCATION_SCALE, LOCATION_WIDTH, LOCATION_ZOOM } from '../Constants';
+import { LOCATION_HEIGHT, LOCATION_SCALE, LOCATION_WIDTH, LOCATION_ZOOM, PHOTO_DISPLAY_SIZE, PHOTO_SIZE } from '../Constants';
 import AppStore from '../Stores/ApplicationStore';
 import ChatStore from '../Stores/ChatStore';
 import FileStore from '../Stores/FileStore';
 import MessageStore from '../Stores/MessageStore';
 import UserStore from '../Stores/UserStore';
 import TdLibController from '../Controllers/TdLibController';
-import Call from '../Components/Message/Media/Call';
 
-function getAuthor(message) {
+export function isMetaBubble(chatId, messageId) {
+    const message = MessageStore.get(chatId, messageId);
+    if (!message) {
+        return false;
+    }
+
+    const { content } = message;
+    if (!content) {
+        return false;
+    }
+
+    const { caption } = content;
+    if (caption && caption.text && caption.text.length > 0) {
+        return false;
+    }
+
+    switch (content['@type']) {
+        case 'messageAnimation': {
+            return true;
+        }
+        case 'messageLocation': {
+            return true;
+        }
+        case 'messagePhoto': {
+            return true;
+        }
+        case 'messageSticker': {
+            return true;
+        }
+        case 'messageVideo': {
+            return true;
+        }
+        case 'messageVideoNote': {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+export function isMessageUnread(chatId, messageId) {
+    const chat = ChatStore.get(chatId);
+    if (!chat) {
+        return false;
+    }
+
+    const { last_read_inbox_message_id, last_read_outbox_message_id } = chat;
+
+    const message = MessageStore.get(chatId, messageId);
+    if (!message) {
+        return false;
+    }
+
+    const { id, is_outgoing } = message;
+    const isMe = isMeChat(chatId);
+    if (is_outgoing && isMe) {
+        return false;
+    }
+
+    return is_outgoing ? id > last_read_outbox_message_id : id > last_read_inbox_message_id;
+}
+
+function getAuthor(message, t = k => k) {
     if (!message) return null;
 
     const { forward_info } = message;
@@ -57,7 +101,7 @@ function getAuthor(message) {
                 if (forward_info.sender_user_id > 0) {
                     const user = UserStore.get(forward_info.sender_user_id);
                     if (user) {
-                        return getUserFullName(user);
+                        return getUserFullName(forward_info.sender_user_id, null, t);
                     }
                 }
                 break;
@@ -72,10 +116,10 @@ function getAuthor(message) {
         }
     }
 
-    return getTitle(message);
+    return getTitle(message, t);
 }
 
-function getTitle(message) {
+function getTitle(message, t = k => k) {
     if (!message) return null;
 
     const { sender_user_id, chat_id } = message;
@@ -83,7 +127,7 @@ function getTitle(message) {
     if (sender_user_id) {
         const user = UserStore.get(sender_user_id);
         if (user) {
-            return getUserFullName(user);
+            return getUserFullName(sender_user_id, null, t);
         }
     }
 
@@ -119,7 +163,7 @@ function searchCurrentChat(event, text) {
     searchChat(chatId, text);
 }
 
-function getFormattedText(formattedText) {
+function getFormattedText(formattedText, t = k => k) {
     if (formattedText['@type'] !== 'formattedText') return null;
 
     const { text, entities } = formattedText;
@@ -132,6 +176,11 @@ function getFormattedText(formattedText) {
     for (let i = 0; i < entities.length; i++) {
         const entity = entities[i];
         const { offset, length, type } = entity;
+
+        // skip nested entities
+        if (index > offset) {
+            continue;
+        }
 
         let textBefore = substring(text, index, offset);
         const textBeforeLength = textBefore.length;
@@ -204,9 +253,8 @@ function getFormattedText(formattedText) {
                 break;
             }
             case 'textEntityTypeMentionName': {
-                const user = UserStore.get(type.user_id);
                 result.push(
-                    <MentionLink key={entityKey} userId={type.user_id} title={getUserFullName(user)}>
+                    <MentionLink key={entityKey} userId={type.user_id} title={getUserFullName(type.user_id, null, t)}>
                         {entityText}
                     </MentionLink>
                 );
@@ -281,26 +329,26 @@ function getFormattedText(formattedText) {
     return result;
 }
 
-function getText(message) {
+function getText(message, meta, t = k => k) {
     if (!message) return null;
 
     let result = [];
 
     const { content } = message;
-    if (!content) return result;
+    if (!content) return [...result, meta];
 
     const { text, caption } = content;
 
     if (text && text['@type'] === 'formattedText' && text.text) {
-        result = getFormattedText(text);
+        result = getFormattedText(text, t);
     } else if (caption && caption['@type'] === 'formattedText' && caption.text) {
-        const formattedText = getFormattedText(caption);
+        const formattedText = getFormattedText(caption, t);
         if (formattedText) {
             result = result.concat(formattedText);
         }
     }
 
-    return result;
+    return result && result.length > 0 ? [...result, meta] : [];
 }
 
 function getWebPage(message) {
@@ -323,134 +371,6 @@ function getDateHint(date) {
 
     const d = new Date(date * 1000);
     return dateFormat(d, 'H:MM:ss d.mm.yyyy'); //date.toDateString();
-}
-
-function getMedia(message, openMedia, hasTitle = false, hasCaption = false) {
-    if (!message) return null;
-
-    const { chat_id, id, content } = message;
-    if (!content) return null;
-
-    switch (content['@type']) {
-        case 'messageAnimation':
-            return (
-                <Animation
-                    type='message'
-                    title={hasTitle}
-                    caption={hasCaption}
-                    chatId={chat_id}
-                    messageId={id}
-                    animation={content.animation}
-                    openMedia={openMedia}
-                />
-            );
-        case 'messageAudio':
-            return <Audio chatId={chat_id} messageId={id} audio={content.audio} openMedia={openMedia} />;
-        case 'messageCall':
-            return (
-                <Call
-                    chatId={chat_id}
-                    messageId={id}
-                    duraton={content.duration}
-                    discardReason={content.discard_reason}
-                    openMedia={openMedia}
-                />
-            );
-        case 'messageContact':
-            return <Contact chatId={chat_id} messageId={id} contact={content.contact} openMedia={openMedia} />;
-        case 'messageDocument':
-            return <Document chatId={chat_id} messageId={id} document={content.document} openMedia={openMedia} />;
-        case 'messageGame':
-            return <Game chatId={chat_id} messageId={id} game={content.game} openMedia={openMedia} />;
-        case 'messageLocation':
-            return (
-                <Location
-                    type='message'
-                    title={hasTitle}
-                    caption={hasCaption}
-                    chatId={chat_id}
-                    messageId={id}
-                    location={content.location}
-                    openMedia={openMedia}
-                />
-            );
-        case 'messagePhoto':
-            return (
-                <Photo
-                    type='message'
-                    title={hasTitle}
-                    caption={hasCaption}
-                    chatId={chat_id}
-                    messageId={id}
-                    photo={content.photo}
-                    openMedia={openMedia}
-                />
-            );
-        case 'messagePoll':
-            return <Poll chatId={chat_id} messageId={id} poll={content.poll} openMedia={openMedia} />;
-        case 'messageSticker':
-            return (
-                <Sticker
-                    chatId={chat_id}
-                    messageId={id}
-                    sticker={content.sticker}
-                    source={StickerSourceEnum.MESSAGE}
-                    openMedia={openMedia}
-                />
-            );
-        case 'messageText':
-            return null;
-        case 'messageVenue':
-            return (
-                <Venue
-                    type='message'
-                    title={hasTitle}
-                    caption={hasCaption}
-                    chatId={chat_id}
-                    messageId={id}
-                    venue={content.venue}
-                    openMedia={openMedia}
-                />
-            );
-        case 'messageVideo':
-            return (
-                <Video
-                    type='message'
-                    title={hasTitle}
-                    caption={hasCaption}
-                    chatId={chat_id}
-                    messageId={id}
-                    video={content.video}
-                    openMedia={openMedia}
-                />
-            );
-        case 'messageVideoNote':
-            return (
-                <VideoNote
-                    type='message'
-                    title={hasTitle}
-                    caption={hasCaption}
-                    chatId={chat_id}
-                    messageId={id}
-                    videoNote={content.video_note}
-                    openMedia={openMedia}
-                />
-            );
-        case 'messageVoiceNote':
-            return (
-                <VoiceNote
-                    type='message'
-                    title={hasTitle}
-                    caption={hasCaption}
-                    chatId={chat_id}
-                    messageId={id}
-                    voiceNote={content.voice_note}
-                    openMedia={openMedia}
-                />
-            );
-        default:
-            return '[' + content['@type'] + ']';
-    }
 }
 
 function isForwardOriginHidden(forwardInfo) {
@@ -484,8 +404,7 @@ function getForwardTitle(forwardInfo, t = key => key) {
         case 'messageForwardOriginUser': {
             const { sender_user_id } = origin;
 
-            const user = UserStore.get(sender_user_id);
-            return getUserFullName(user);
+            return getUserFullName(sender_user_id, null, t);
         }
         case 'messageForwardOriginHiddenUser': {
             const { sender_name } = origin;
@@ -804,7 +723,7 @@ function isContentOpened(chatId, messageId) {
     }
 }
 
-function getMediaTitle(message) {
+function getMediaTitle(message, t = k => k) {
     if (!message) return null;
 
     const { content } = message;
@@ -830,7 +749,7 @@ function getMediaTitle(message) {
         }
     }
 
-    return getAuthor(message);
+    return getAuthor(message, t);
 }
 
 function hasAudio(chatId, messageId) {
@@ -1088,7 +1007,7 @@ function openContact(contact, message, fileCancel) {
         message_id: id
     });
 
-    openUser(contact.userId);
+    openUser(contact.user_id, true);
 }
 
 function openDocument(document, message, fileCancel) {
@@ -1345,6 +1264,7 @@ function openMedia(chatId, messageId, fileCancel = true) {
         case 'messageAudio': {
             const { audio } = content;
             if (audio) {
+                // openDocument(audio, message, fileCancel);
                 openAudio(audio, message, fileCancel);
             }
 
@@ -1750,27 +1670,6 @@ function messageComparatorDesc(left, right) {
     return left.id - right.id;
 }
 
-export function hasMention(message) {
-    return message && message.contains_unread_mention;
-}
-
-export function hasPinnedMessage(message) {
-    return message && message.content['@type'] === 'messagePinMessage';
-}
-
-export function isMessageMuted(message) {
-    const { chat_id } = message;
-
-    if (hasMention(message)) {
-        return getChatDisableMentionNotifications(chat_id);
-    }
-    if (hasPinnedMessage(message)) {
-        return getChatDisablePinnedMessageNotifications(chat_id);
-    }
-
-    return isChatMuted(chat_id);
-}
-
 function checkInclusion(index, entities) {
     if (!entities) return false;
     if (!entities.length) return false;
@@ -1850,7 +1749,7 @@ function addTextNode(offset, length, text, nodes) {
     nodes.push(node);
 }
 
-export function getNodes(text, entities) {
+export function getNodes(text, entities, t = k => k) {
     if (!text) return [];
 
     entities = (entities || []).sort((a, b) => {
@@ -1916,7 +1815,7 @@ export function getNodes(text, entities) {
                         if (user) {
                             const node = document.createElement('a');
                             // node.href = getDecodedUrl(url, false);
-                            node.title = getUserFullName(user);
+                            node.title = getUserFullName(user_id, null, t);
                             // node.target = '_blank';
                             // node.rel = 'noopener noreferrer';
                             node.dataset.userId = user_id;
@@ -1988,23 +1887,29 @@ export function getEntities(text) {
     const entities = [];
     if (!text) return { text, entities };
 
+    text = text.replace(/<div><br><\/div>/gi, '<br>');
+    text = text.replace(/<div>/gi, '<br>');
+    text = text.replace(/<\/div>/gi, '');
     text = text.split('<br>').join('\n');
 
-    // console.log(`[ge] start text=${text}`);
-
-    let index = -1; // first index of end tag
-    let lastIndex = 0; // first index after end tag
-    let start = -1; // first index of start tag
-    let isPre = false;
-    const mono = '`';
-    const pre = '```';
-    const bold = '**';
-    const italic = '__';
-
     // 0 looking for html entities
+    text = getHTMLEntities(text, entities);
+
+    // 1 looking for ``` and ` in order to find mono and pre entities
+    text = getMonoPreEntities(text, entities);
+
+    // 2 looking for bold, italic entities
+    text = getBoldItalicEntities(text, entities);
+
+    return { text, entities };
+}
+
+export function getHTMLEntities(text, entities) {
     const result = new DOMParser().parseFromString(text, 'text/html');
+
     let offset = 0;
     let length = 0;
+
     let finalText = '';
     result.body.childNodes.forEach(node => {
         const { textContent, nodeName } = node;
@@ -2098,9 +2003,21 @@ export function getEntities(text) {
         }
     });
     text = finalText;
-    // console.log(`[ge] HTML nodes text=${text}`, entities);
 
-    // 1 looking for ``` and ` in order to find mono and pre entities
+    return text;
+}
+
+export function getMonoPreEntities(text, entities) {
+    const mono = '`';
+    const pre = '```';
+    let isPre = false;
+
+    let index = -1;     // first index of end tag
+    let lastIndex = 0;  // first index after end tag
+    let start = -1;     // first index of start tag
+
+    let offset = 0, length = 0;
+
     while ((index = text.indexOf(isPre ? pre : mono, lastIndex)) !== -1) {
         if (start === -1) {
             // find start tag
@@ -2250,8 +2167,20 @@ export function getEntities(text) {
         }
     }
 
-    // console.log(`[ge] pre and code text=${text}`, entities);
-    // 2 looking for bold, italic entities
+    return text;
+}
+
+export function getBoldItalicEntities(text, entities) {
+    const bold = '**';
+    const italic = '__';
+
+
+    let index = -1;     // first index of end tag
+    let lastIndex = 0;  // first index after end tag
+    let start = -1;     // first index of start tag
+
+    let offset = 0, length = 0;
+
     for (let c = 0; c < 2; c++) {
         lastIndex = 0;
         start = -1;
@@ -2304,9 +2233,8 @@ export function getEntities(text) {
             }
         }
     }
-    // console.log(`[ge] result text=${text}`, entities);
 
-    return { text, entities };
+    return text;
 }
 
 export function canMessageBeEdited(chatId, messageId) {
@@ -2343,6 +2271,101 @@ export function isMessagePinned(chatId, messageId) {
     return chat.pinned_message_id === messageId;
 }
 
+export function canMessageBeUnvoted(chatId, messageId) {
+    const message = MessageStore.get(chatId, messageId);
+    if (!message) return false;
+
+    const { content } = message;
+    if (!content) return;
+    if (content['@type'] !== 'messagePoll') return;
+
+    const { poll } = content;
+    if (!poll) return false;
+
+    const { type, is_closed, options } = poll;
+    if (!type) return false;
+    if (type['@type'] !== 'pollTypeRegular') return false;
+    if (is_closed) return false;
+
+    return options.some(x => x.is_chosen || x.is_being_chosen);
+}
+
+export function canMessageBeClosed(chatId, messageId) {
+    const message = MessageStore.get(chatId, messageId);
+    if (!message) return false;
+
+    const { content, can_be_edited } = message;
+    if (!content) return;
+    if (content['@type'] !== 'messagePoll') return;
+
+    return can_be_edited;
+}
+
+export function canMessageBeForwarded(chatId, messageId) {
+    const message = MessageStore.get(chatId, messageId);
+
+    return message && message.can_be_forwarded;
+}
+
+export function canMessageBeDeleted(chatId, messageId) {
+    const message = MessageStore.get(chatId, messageId);
+
+    return message && (message.can_be_deleted_only_for_self || message.can_be_deleted_for_all_users);
+}
+
+export function getMessageStyle(chatId, messageId) {
+    const message = MessageStore.get(chatId, messageId);
+    if (!message) return null;
+
+    const { content } = message;
+    if (!content) return null;
+
+    switch (content['@type']) {
+        case 'messageAnimation': {
+            const { animation } = content;
+            if (!animation) return null;
+
+            const { width, height, thumbnail } = animation;
+
+            const size = { width, height } || thumbnail;
+            if (!size) return null;
+
+            const fitSize = getFitSize(size, PHOTO_DISPLAY_SIZE, false);
+            if (!fitSize) return null;
+
+            return { width: fitSize.width };
+        }
+        case 'messagePhoto': {
+            const { photo } = content;
+            if (!photo) return null;
+
+            const size = getSize(photo.sizes, PHOTO_SIZE);
+            if (!size) return null;
+
+            const fitSize = getFitSize(size, PHOTO_DISPLAY_SIZE, false);
+            if (!fitSize) return null;
+
+            return { width: fitSize.width };
+        }
+        case 'messageVideo': {
+            const { video } = content;
+            if (!video) return null;
+
+            const { thumbnail, width, height } = video;
+
+            const size = { width, height } || thumbnail;
+            if (!size) return null;
+
+            const fitSize = getFitSize(size, PHOTO_DISPLAY_SIZE);
+            if (!fitSize) return null;
+
+            return { width: fitSize.width };
+        }
+    }
+
+    return null;
+}
+
 export {
     getAuthor,
     getTitle,
@@ -2352,7 +2375,6 @@ export {
     getContent,
     getDate,
     getDateHint,
-    getMedia,
     isForwardOriginHidden,
     getForwardTitle,
     getUnread,

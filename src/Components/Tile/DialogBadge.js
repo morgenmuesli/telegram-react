@@ -7,35 +7,21 @@
 
 import React from 'react';
 import classNames from 'classnames';
-import withStyles from '@material-ui/core/styles/withStyles';
 import PinIcon from '../../Assets/Icons/Pin';
 import {
     isChatMuted,
     showChatUnreadCount,
-    showChatUnreadMentionCount,
-    showChatUnreadMessageIcon
+    showChatUnreadMentionCount
 } from '../../Utils/Chat';
 import ChatStore from '../../Stores/ChatStore';
 import NotificationStore from '../../Stores/NotificationStore';
 import './DialogBadge.css';
 
-const styles = theme => ({
-    unreadIcon: {},
-    pinIcon: {
-        color: theme.palette.text.secondary,
-        fontSize: 18
-    }
-});
-
 class DialogBadge extends React.Component {
     shouldComponentUpdate(nextProps, nextState) {
-        const { chatId, theme } = this.props;
+        const { chatId } = this.props;
 
         if (nextProps.chatId !== chatId) {
-            return true;
-        }
-
-        if (nextProps.theme !== theme) {
             return true;
         }
 
@@ -118,21 +104,19 @@ class DialogBadge extends React.Component {
     render() {
         if (this.clearHistory) return null;
 
-        const { chatId, classes } = this.props;
+        const { chatId } = this.props;
 
         const chat = ChatStore.get(chatId);
         if (!chat) return null;
 
         const { is_pinned, unread_count } = chat;
 
-        const showUnreadMessageIcon = showChatUnreadMessageIcon(chatId);
         const showUnreadMentionCount = showChatUnreadMentionCount(chatId);
         const showUnreadCount = showChatUnreadCount(chatId);
         const isMuted = isChatMuted(chatId);
 
         return (
             <>
-                {showUnreadMessageIcon && <i className={classNames('dialog-badge-unread', classes.unreadIcon)} />}
                 {showUnreadMentionCount && (
                     <div className='dialog-badge'>
                         <div className='dialog-badge-mention'>@</div>
@@ -143,12 +127,14 @@ class DialogBadge extends React.Component {
                         <span className='dialog-badge-text'>{unread_count > 0 ? unread_count : ''}</span>
                     </div>
                 )}
-                {is_pinned && !showUnreadMessageIcon && !showUnreadCount && !showUnreadMentionCount && (
-                    <PinIcon className={classNames(classes.pinIcon, 'dialog-badge-pinned')} />
+                {is_pinned && !showUnreadCount && !showUnreadMentionCount && (
+                    <div className='dialog-badge-pinned'>
+                        <PinIcon className='dialog-badge-pinned-icon' />
+                    </div>
                 )}
             </>
         );
     }
 }
 
-export default withStyles(styles, { withTheme: true })(DialogBadge);
+export default DialogBadge;

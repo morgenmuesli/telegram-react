@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { EventEmitter } from 'events';
+import EventEmitter from './EventEmitter';
 import TdLibController from '../Controllers/TdLibController';
 
 class SupergroupStore extends EventEmitter {
@@ -15,7 +15,6 @@ class SupergroupStore extends EventEmitter {
         this.reset();
 
         this.addTdLibListener();
-        this.setMaxListeners(Infinity);
     }
 
     reset = () => {
@@ -38,11 +37,14 @@ class SupergroupStore extends EventEmitter {
 
                 break;
             }
-            case 'updateSupergroup':
+            case 'updateSupergroup': {
+                const prevSupergroup = this.get(update.supergroup.id);
+
                 this.set(update.supergroup);
 
-                this.emit(update['@type'], update);
+                this.emit(update['@type'], { ...update, prevSupergroup });
                 break;
+            }
             case 'updateSupergroupFullInfo':
                 this.setFullInfo(update.supergroup_id, update.supergroup_full_info);
 
@@ -56,8 +58,8 @@ class SupergroupStore extends EventEmitter {
     onClientUpdate = update => {};
 
     addTdLibListener = () => {
-        TdLibController.addListener('update', this.onUpdate);
-        TdLibController.addListener('clientUpdate', this.onClientUpdate);
+        TdLibController.on('update', this.onUpdate);
+        TdLibController.on('clientUpdate', this.onClientUpdate);
     };
 
     removeTdLibListener = () => {

@@ -5,12 +5,13 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { EventEmitter } from 'events';
+import EventEmitter from './EventEmitter';
 import { debounce } from '../Utils/Common';
 import CacheManager from '../Workers/CacheManager';
 import BasicGroupStore from './BasicGroupStore';
 import ChatStore from './ChatStore';
 import FileStore from './FileStore';
+import MessageStore from './MessageStore';
 import OptionStore from './OptionStore';
 import SupergroupStore from './SupergroupStore';
 import UserStore from './UserStore';
@@ -23,7 +24,6 @@ class CacheStore extends EventEmitter {
         this.reset();
 
         this.addTdLibListener();
-        this.setMaxListeners(Infinity);
 
         this.saveChatsInternal = debounce(this.saveChatsInternal, 2000);
     }
@@ -31,6 +31,7 @@ class CacheStore extends EventEmitter {
     reset = () => {
         this.chatIds = [];
         this.cache = null;
+        this.contacts = null;
     };
 
     onUpdate = update => {
@@ -51,6 +52,7 @@ class CacheStore extends EventEmitter {
                     case 'authorizationStateWaitRegistration': {
                         CacheManager.remove('cache');
                         CacheManager.remove('files');
+                        CacheManager.remove('contacts');
                         break;
                     }
                 }
@@ -73,8 +75,8 @@ class CacheStore extends EventEmitter {
     };
 
     addTdLibListener = () => {
-        TdLibController.addListener('update', this.onUpdate);
-        TdLibController.addListener('clientUpdate', this.onClientUpdate);
+        TdLibController.on('update', this.onUpdate);
+        TdLibController.on('clientUpdate', this.onClientUpdate);
     };
 
     removeTdLibListener = () => {
@@ -103,9 +105,10 @@ class CacheStore extends EventEmitter {
     parseCache(cache) {
         if (!cache) return;
 
-        const { chats, archiveChats, users, basicGroups, supergroups, files, options } = cache;
+        const { meChat, chats, archiveChats, users, basicGroups, supergroups, files, options } = cache;
+        console.log('[cache] parseCache', cache);
 
-        (files || []).forEach(({ id, url }) => {
+        (files || []).filter(x => Boolean(x)).forEach(({ id, url }) => {
             FileStore.setDataUrl(id, url);
         });
 
@@ -121,14 +124,21 @@ class CacheStore extends EventEmitter {
             SupergroupStore.set(x);
         });
 
-        (chats || []).concat(archiveChats || []).forEach(x => {
-            ChatStore.set(x);
-            if (x.photo) {
-                if (x.photo.small) FileStore.set(x.photo.small);
-                if (x.photo.big) FileStore.set(x.photo.big);
-            }
-            if (x.chat_list) {
-                ChatStore.updateChatChatList(x.id, x.chat_list);
+        (chats || []).concat(archiveChats || []).concat([meChat]).forEach(x => {
+            if (x) {
+                delete x.OutputTypingManager;
+
+                ChatStore.set(x);
+                if (x.photo) {
+                    if (x.photo.small) FileStore.set(x.photo.small);
+                    if (x.photo.big) FileStore.set(x.photo.big);
+                }
+                if (x.chat_list) {
+                    ChatStore.updateChatChatList(x.id, x.chat_list);
+                }
+                if (x.last_message) {
+                    MessageStore.set(x.last_message);
+                }
             }
         });
 
@@ -137,14 +147,21 @@ class CacheStore extends EventEmitter {
         });
     }
 
-    getCache(chatIds, archiveChatIds) {
+    async getCache(chatIds, archiveChatIds) {
         const fileMap = new Map();
         const userMap = new Map();
         const basicGroupMap = new Map();
         const supergroupMap = new Map();
+        const meChat = await TdLibController.send({
+            '@type': 'createPrivateChat',
+            user_id: UserStore.getMyId(),
+            force: true
+        });
         const chats = chatIds.map(x => ChatStore.get(x));
         const archiveChats = archiveChatIds.map(x => ChatStore.get(x));
-        chats.concat(archiveChats).forEach(x => {
+
+
+        chats.concat(archiveChats).concat([meChat]).forEach(x => {
             const { photo, type, last_message } = x;
             if (photo && photo.small) {
                 const { id } = photo.small;
@@ -190,6 +207,7 @@ class CacheStore extends EventEmitter {
         });
 
         return {
+            meChat,
             chats,
             archiveChats,
             users: [...userMap.values()],
@@ -208,10 +226,10 @@ class CacheStore extends EventEmitter {
 
     async saveChatsInternal() {
         // console.log('[cm] saveChatsInternal', this.chatIds, this.archiveChatIds);
-        const cache = this.getCache(this.chatIds, this.archiveChatIds);
+        const cache = await this.getCache(this.chatIds, this.archiveChatIds);
         const files = cache.files;
         cache.files = [];
-        // console.log('[cm] save cache', cache);
+        console.log('[cm] save cache', cache);
         await CacheManager.save('cache', cache);
 
         const promises = [];
@@ -237,13 +255,13 @@ class CacheStore extends EventEmitter {
     }
 
     clear() {
-        if (!this.cache) return;
+        if (this.cache) {
+            const { files } = this.cache;
 
-        const { files } = this.cache;
-
-        files.forEach(({ id, url }) => {
-            FileStore.deleteDataUrl(id);
-        });
+            files.filter(x => Boolean(x)).forEach(({ id, url }) => {
+                FileStore.deleteDataUrl(id);
+            });
+        }
     }
 }
 

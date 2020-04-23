@@ -7,16 +7,16 @@
 
 import React from 'react';
 import PropTypes from 'prop-types';
-import ArrowDownwardIcon from '@material-ui/icons/ArrowDownward';
-import PlayArrowIcon from '@material-ui/icons/PlayArrow';
-import PauseIcon from '@material-ui/icons/Pause';
+import classNames from 'classnames';
+import DownloadIcon from '../../../Assets/Icons/Download';
+import PlayArrowIcon from '../../../Assets/Icons/PlayArrow';
+import PauseIcon from '../../../Assets/Icons/Pause';
 import DocumentTile from '../../Tile/DocumentTile';
 import AudioAction from './AudioAction';
-import FileProgress from '../../Viewer/FileProgress';
-import { getAudioTitle } from '../../../Utils/Media';
+import VoiceNoteSlider from './VoiceNoteSlider';
+import { getAudioShortTitle, getAudioSubtitle, getAudioTitle } from '../../../Utils/Media';
 import PlayerStore from '../../../Stores/PlayerStore';
 import './Audio.css';
-import InsertDriveFileIcon from './Document';
 
 class Audio extends React.Component {
     constructor(props) {
@@ -122,30 +122,39 @@ class Audio extends React.Component {
     };
 
     render() {
-        const { chatId, messageId, audio, openMedia } = this.props;
-        const { playing } = this.state;
+        const { chatId, messageId, audio, openMedia, title, meta, caption } = this.props;
+        const { playing, active } = this.state;
         if (!audio) return null;
 
         const { album_cover_thumbnail, duration, audio: file } = audio;
 
-        const title = getAudioTitle(audio);
+        const audioTitle = getAudioSubtitle(audio);
+        const audioSubtitle = getAudioShortTitle(audio);
 
         return (
-            <div className='document'>
+            <div className={classNames('audio', 'document', { 'media-title': title })}>
                 <DocumentTile
                     thumbnail={album_cover_thumbnail}
                     file={file}
                     openMedia={openMedia}
-                    icon={<ArrowDownwardIcon />}
+                    icon={<DownloadIcon />}
                     completeIcon={playing ? <PauseIcon /> : <PlayArrowIcon />}
                 />
-                <div className='document-content'>
+                <div className='audio-content'>
                     <div className='document-title'>
-                        <a className='document-name' onClick={openMedia} title={title}>
-                            {title}
+                        <a className='document-name' onClick={openMedia} title={audioTitle}>
+                            {audioTitle}
                         </a>
                     </div>
-                    <AudioAction chatId={chatId} messageId={messageId} duration={duration} file={file} />
+                    <div className='audio-action' style={{ opacity: active ? 0 : 1 }}>{audioSubtitle}</div>
+                    <VoiceNoteSlider className='audio-slider' chatId={chatId} messageId={messageId} duration={duration} style={{ opacity: active ? 1 : 0 }}/>
+                    <AudioAction
+                        chatId={chatId}
+                        messageId={messageId}
+                        duration={duration}
+                        file={file}
+                        meta={caption ? null : meta}
+                    />
                 </div>
             </div>
         );

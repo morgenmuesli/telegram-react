@@ -7,40 +7,23 @@
 
 import React from 'react';
 import PropTypes from 'prop-types';
-import classNames from 'classnames';
-import { compose } from 'recompose';
-import withStyles from '@material-ui/core/styles/withStyles';
 import { withTranslation } from 'react-i18next';
 import Button from '@material-ui/core/Button';
 import Dialog from '@material-ui/core/Dialog';
 import DialogActions from '@material-ui/core/DialogActions';
 import EditIcon from '@material-ui/icons/Edit';
 import IconButton from '@material-ui/core/IconButton';
+import FormControlLabel from '@material-ui/core/FormControlLabel';
+import Radio from '@material-ui/core/Radio';
+import RadioGroup from '@material-ui/core/RadioGroup';
 import EditUrlDialog from './EditUrlDialog';
-import { borderStyle } from '../Theme';
 import { focusInput } from '../../Utils/DOM';
-import { getEntities, getMedia, getNodes } from '../../Utils/Message';
-import FileStore from '../../Stores/FileStore';
+import { editMessage as editMessageAction } from '../../Actions/Client';
+import { getEntities, getNodes } from '../../Utils/Message';
+import { getMedia, getMediaPhotoFromFile } from '../../Utils/Media';
 import MessageStore from '../../Stores/MessageStore';
-import TdLibController from '../../Controllers/TdLibController';
 import './EditMediaDialog.css';
-import { readImageSize } from '../../Utils/Common';
 
-const styles = theme => ({
-    ...borderStyle(theme),
-    editButton: {
-        position: 'absolute',
-        top: 30,
-        right: 30,
-        padding: 6,
-        color: 'white',
-        fontSize: 18,
-        background: 'rgba(0, 0, 0, 0.25)',
-        '&:hover': {
-            background: 'rgba(0, 0, 0, 0.25)'
-        }
-    }
-});
 class EditMediaDialog extends React.Component {
     constructor(props) {
         super(props);
@@ -48,7 +31,44 @@ class EditMediaDialog extends React.Component {
         this.captionRef = React.createRef();
         this.editMediaRef = React.createRef();
 
-        this.state = {};
+        this.state = {
+
+        };
+    }
+
+    static getDerivedStateFromProps(props, state) {
+        const { prevOpen } = state;
+        const { open, chatId, messageId, newItem } = props;
+
+        if (prevOpen !== open) {
+            if (open) {
+                const editMessage = MessageStore.get(chatId, messageId);
+                let sendAsPhoto = false;
+                if (editMessage && editMessage.content['@type'] === 'messagePhoto') {
+                    sendAsPhoto = true;
+                } else if (newItem && newItem.media && newItem.media['@type'] === 'messagePhoto'){
+                    sendAsPhoto = true;
+                }
+
+                return {
+                    prevOpen: true,
+                    sendAsPhoto,
+                    editMessage,
+                    editMedia: null,
+                    editFile: null
+                }
+            } else {
+                return {
+                    prevOpen: false,
+                    sendAsPhoto: false,
+                    editMessage: null,
+                    editMedia: null,
+                    editFile: null
+                }
+            }
+        }
+
+        return null;
     }
 
     componentDidMount() {
@@ -56,7 +76,7 @@ class EditMediaDialog extends React.Component {
     }
 
     componentWillUnmount() {
-        document.removeEventListener('selectionchange', this.handleSelectionChange);
+        document.removeEventListener('selectionchange', this.handleSelectionChange, true);
     }
 
     handleSelectionChange = () => {
@@ -65,39 +85,39 @@ class EditMediaDialog extends React.Component {
         }
     };
 
-    componentDidUpdate(prevProps, prevState, snapshot) {
-        const { chatId, messageId, open } = this.props;
-        if (open && open !== prevProps.open) {
-            this.file = null;
-            this.media = null;
+    handleEnter = () => {
+        const { chatId, messageId, open, newItem } = this.props;
+        if (!open) return;
 
-            const message = MessageStore.get(chatId, messageId);
-            if (!message) return;
-
+        let text = null;
+        let caption = null;
+        const message = MessageStore.get(chatId, messageId);
+        if (message) {
             const { content } = message;
-            if (!content) return;
-
-            const { text, caption } = content;
-            if (!text && !caption) return;
-
-            setTimeout(() => {
-                const element = this.captionRef.current;
-                if (!element) return;
-
-                if (text) {
-                    this.setFormattedText(text);
-                } else if (caption) {
-                    this.setFormattedText(caption);
-                } else {
-                    element.innerText = null;
-                }
-
-                focusInput(element);
-            }, 0);
+            if (content) {
+                text = content.text;
+                caption = content.caption;
+            }
         }
-    }
+
+        const element = this.captionRef.current;
+        if (!element) return;
+
+        if (text) {
+            this.setFormattedText(text);
+        } else if (caption) {
+            this.setFormattedText(caption);
+        } else if (newItem && newItem.caption) {
+            element.innerHTML = newItem.caption;
+        } else {
+            element.innerText = null;
+        }
+
+        focusInput(element);
+    };
 
     setFormattedText(formattedText) {
+        const { t } = this.props;
         const element = this.captionRef.current;
 
         if (!formattedText) {
@@ -107,7 +127,7 @@ class EditMediaDialog extends React.Component {
 
         const { text, entities } = formattedText;
         try {
-            const nodes = getNodes(text, entities);
+            const nodes = getNodes(text, entities, t);
             element.innerHTML = null;
             nodes.forEach(x => {
                 element.appendChild(x);
@@ -118,7 +138,8 @@ class EditMediaDialog extends React.Component {
     }
 
     handleDone = () => {
-        const { chatId, onDone } = this.props;
+        const { chatId, newItem, onSend, onEdit } = this.props;
+        const { editMessage, editFile, editMedia, sendAsPhoto } = this.state;
 
         const element = this.captionRef.current;
         if (!element) return;
@@ -135,44 +156,95 @@ class EditMediaDialog extends React.Component {
             entities
         };
 
-        let content = null;
-        if (this.file) {
-            readImageSize(this.file, result => {
-                content = {
+        const isEditing = Boolean(editMessage);
+        if (isEditing) {
+            if (editMedia) {
+                const { photo } = editMedia;
+                if (!photo) return;
+
+                const { sizes } = photo;
+                if (!sizes) return;
+
+                const size = sizes[sizes.length - 1];
+
+                const { width, height } = size;
+
+                const content = {
                     '@type': 'inputMessagePhoto',
-                    photo: { '@type': 'inputFileBlob', name: result.name, data: result },
-                    width: result.photoWidth,
-                    height: result.photoHeight,
+                    photo: { '@type': 'inputFileBlob', name: editFile.name, data: editFile },
+                    width,
+                    height,
                     caption
                 };
-                onDone(null, content);
 
-                TdLibController.clientUpdate({
-                    '@type': 'clientUpdateEditMessage',
-                    chatId,
-                    messageId: 0
-                });
-            });
-            this.file = null;
+                onEdit(null, content);
+            } else {
+                onEdit(caption, null);
+            }
+
+            editMessageAction(chatId, 0);
         } else {
-            onDone(caption, null);
+            const { media, file } = newItem;
+            const { audio, photo, document } = media;
 
-            TdLibController.clientUpdate({
-                '@type': 'clientUpdateEditMessage',
-                chatId,
-                messageId: 0
-            });
+            let content = null;
+            if (photo) {
+                const { sizes } = photo;
+                if (!sizes) return;
+
+                const size = sizes[sizes.length - 1];
+
+                const { width, height } = size;
+
+                content = sendAsPhoto
+                    ? {
+                        '@type': 'inputMessagePhoto',
+                        photo: { '@type': 'inputFileBlob', name: file.name, data: file },
+                        width,
+                        height,
+                        caption
+                    }
+                    : {
+                        '@type': 'inputMessageDocument',
+                        document: { '@type': 'inputFileBlob', name: file.name, data: file },
+                        thumbnail: null,
+                        caption
+                    };
+            } else if (document) {
+                content = {
+                    '@type': 'inputMessageDocument',
+                    document: { '@type': 'inputFileBlob', name: file.name, data: file },
+                    thumbnail: null,
+                    caption
+                };
+            } else if (audio) {
+                const { duration, title, performer } = audio;
+
+                content = {
+                    '@type': 'inputMessageAudio',
+                    audio: { '@type': 'inputFileBlob', name: file.name, data: file },
+                    thumbnail: null,
+                    duration,
+                    title,
+                    performer,
+                    caption
+                };
+            }
+            if (!content) return;
+
+            onSend(content, file);
         }
     };
 
     handleCancel = () => {
-        const { chatId, onCancel } = this.props;
+        const { chatId, messageId, onCancel } = this.props;
 
-        TdLibController.clientUpdate({
-            '@type': 'clientUpdateEditMessage',
-            chatId,
-            messageId: 0
-        });
+        const message = MessageStore.get(chatId, messageId);
+        const isEditing = Boolean(message);
+
+        if (isEditing) {
+            editMessageAction(chatId, 0);
+        }
 
         onCancel();
     };
@@ -334,6 +406,9 @@ class EditMediaDialog extends React.Component {
 
     saveSelection() {
         this.selection = document.getSelection();
+        if (!this.selection) return;
+        if (!this.selection.rangeCount) return;
+
         this.range = this.selection.getRangeAt(0);
     }
 
@@ -422,94 +497,95 @@ class EditMediaDialog extends React.Component {
         element.click();
     };
 
-    handleEditMediaComplete = event => {
+    handleEditMediaComplete = async () => {
         const element = this.editMediaRef.current;
         if (!element) return;
 
         const { files } = element;
         if (files.length === 0) return;
 
-        Array.from(files).forEach(file => {
-            this.file = file;
-            this.getMediaFromFile(file, result => {
-                this.media = result;
-                this.forceUpdate();
-            });
+        const [file, ...rest] = Array.from(files);
+        if (!file) return;
+
+        const editMedia = await getMediaPhotoFromFile(file);
+
+        this.setState({
+            editFile: file,
+            editMedia
         });
 
         element.value = '';
     };
 
-    getRandomInt(min, max) {
-        return Math.floor(Math.random() * (max - min + 1)) + min;
-    }
+    handleSendAsPhoto = () => {
+        const { sendAsPhoto } = this.state;
 
-    getMediaFromFile(file, callback) {
-        if (!file) {
-            callback(null);
-        }
-
-        if (file.type.startsWith('image')) {
-            readImageSize(file, result => {
-                const fileId = -this.getRandomInt(1, 1000000);
-                FileStore.setBlob(fileId, result);
-
-                callback({
-                    '@type': 'messagePhoto',
-                    photo: {
-                        '@type': 'photo',
-                        has_stickers: false,
-                        minithumbnail: null,
-                        sizes: [
-                            {
-                                '@type': 'photoSize',
-                                photo: { '@type': 'file', id: fileId },
-                                width: result.photoWidth,
-                                height: result.photoHeight
-                            }
-                        ]
-                    }
-                });
-            });
-        } else {
-            callback(null);
-        }
-    }
+        this.setState({
+            sendAsPhoto: !sendAsPhoto
+        });
+    };
 
     render() {
-        const { classes, chatId, messageId, open, t } = this.props;
+        const { chatId, messageId, newItem, open, t } = this.props;
+        const { defaultText, defaultUrl, openEditUrl, editMessage, editMedia, sendAsPhoto } = this.state;
         if (!open) return null;
 
-        const { defaultText, defaultUrl, openEditUrl } = this.state;
-
         const message = MessageStore.get(chatId, messageId);
-        if (!message) return;
+        const isEditing = Boolean(message);
+        let isPhoto = false;
+        if (newItem && newItem.media && newItem.media['@type'] === 'messagePhoto') {
+            isPhoto = true;
+        } else if (editMedia && editMedia['@type'] === 'messagePhoto') {
+            isPhoto = true;
+        } else if (editMessage && editMessage.content['@type'] === 'messagePhoto'){
+            isPhoto = true;
+        }
 
-        const media = getMedia({ content: this.media }) || getMedia(message, null);
+        let media = null;
+        if (isEditing) {
+            media =
+            editMedia
+                ? getMedia({ content: editMedia })
+                : getMedia(message, null);
+        } else if (newItem) {
+            media = getMedia({ content: newItem.media });
+        }
+        const doneLabel = isEditing ? t('Edit') : t('Send');
 
         return (
             <Dialog
                 transitionDuration={0}
                 open={true}
                 onClose={this.handleCancel}
-                aria-labelledby='edit-media-dialog-title'>
-                <div className={classNames(classes.borderColor, 'edit-media-dialog-content')}>
+                aria-labelledby='edit-media-dialog-title'
+                onEnter={this.handleEnter}>
+                <div className='edit-media-dialog-content'>
                     <div style={{ margin: 24 }}>{media}</div>
-                    <IconButton
-                        disableRipple={true}
-                        aria-label={t('Edit')}
-                        className={classes.editButton}
-                        size='small'
-                        onClick={this.handleEditMedia}>
-                        <EditIcon fontSize='inherit' />
-                    </IconButton>
-                    <input
-                        ref={this.editMediaRef}
-                        className='inputbox-attach-button'
-                        type='file'
-                        accept='image/*'
-                        onChange={this.handleEditMediaComplete}
-                    />
+                    { isEditing && (
+                        <>
+                            <IconButton
+                                disableRipple={true}
+                                aria-label={t('Edit')}
+                                className='edit-media-dialog-edit-button'
+                                size='small'
+                                onClick={this.handleEditMedia}>
+                                <EditIcon fontSize='inherit' />
+                            </IconButton>
+                            <input
+                                ref={this.editMediaRef}
+                                className='inputbox-attach-button'
+                                type='file'
+                                accept='image/*'
+                                onChange={this.handleEditMediaComplete}
+                            />
+                        </>
+                    )}
+                    { !isEditing && isPhoto && (
+                        <RadioGroup value={sendAsPhoto} onChange={this.handleSendAsPhoto} style={{ margin: '0 24px 24px' }}>
+                            <FormControlLabel value={true} control={<Radio color='primary'/>} label={t('SendAsPhoto')} />
+                            <FormControlLabel value={false} control={<Radio color='primary'/>} label={t('SendAsFile')} />
+                        </RadioGroup>
+                    )}
                 </div>
                 <div
                     ref={this.captionRef}
@@ -526,7 +602,7 @@ class EditMediaDialog extends React.Component {
                         {t('Cancel')}
                     </Button>
                     <Button onClick={this.handleDone} color='primary'>
-                        {t('Edit')}
+                        {doneLabel}
                     </Button>
                 </DialogActions>
                 <EditUrlDialog
@@ -542,14 +618,15 @@ class EditMediaDialog extends React.Component {
 }
 
 EditMediaDialog.propTypes = {
+    open: PropTypes.bool,
+
     chatId: PropTypes.number,
     messageId: PropTypes.number,
-    open: PropTypes.bool
+    newItem: PropTypes.object,
+
+    onSend: PropTypes.func,
+    onEdit: PropTypes.func,
+    onCancel: PropTypes.func
 };
 
-const enhance = compose(
-    withStyles(styles, { withTheme: true }),
-    withTranslation()
-);
-
-export default enhance(EditMediaDialog);
+export default withTranslation()(EditMediaDialog);

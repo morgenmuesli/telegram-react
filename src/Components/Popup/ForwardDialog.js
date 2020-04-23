@@ -7,10 +7,7 @@
 
 import React from 'react';
 import PropTypes from 'prop-types';
-import copy from 'copy-to-clipboard';
-import classNames from 'classnames';
-import { compose } from 'recompose';
-import withStyles from '@material-ui/core/styles/withStyles';
+import { compose } from '../../Utils/HOC';
 import { withTranslation } from 'react-i18next';
 import { withSnackbar } from 'notistack';
 import Button from '@material-ui/core/Button';
@@ -18,35 +15,19 @@ import IconButton from '@material-ui/core/IconButton';
 import Dialog from '@material-ui/core/Dialog';
 import DialogActions from '@material-ui/core/DialogActions';
 import DialogTitle from '@material-ui/core/DialogTitle';
-import CloseIcon from '@material-ui/icons/Close';
+import CloseIcon from '../../Assets/Icons/Close';
 import ForwardTargetChat from '../Tile/ForwardTargetChat';
+import { copy } from '../../Utils/Text';
 import { canSendMessages, getChatTitle, getChatUsername, isSupergroup } from '../../Utils/Chat';
 import { loadChatsContent } from '../../Utils/File';
 import { getCyrillicInput, getLatinInput } from '../../Utils/Language';
-import { borderStyle } from '../Theme';
+import { clearSelection, forward } from '../../Actions/Client';
 import { NOTIFICATION_AUTO_HIDE_DURATION_MS } from '../../Constants';
-import ApplicationStore from '../../Stores/ApplicationStore';
 import FileStore from '../../Stores/FileStore';
 import MessageStore from '../../Stores/MessageStore';
 import UserStore from '../../Stores/UserStore';
 import TdLibController from '../../Controllers/TdLibController';
 import './ForwardDialog.css';
-import { clearSelection } from '../../Actions/Client';
-
-const styles = theme => ({
-    dialog: {
-        color: theme.palette.text.primary
-    },
-    dialogContent: {
-        padding: 0,
-        display: 'flex',
-        position: 'relative'
-    },
-    searchList: {
-        background: theme.palette.background.paper
-    },
-    ...borderStyle(theme)
-});
 
 class ForwardDialog extends React.Component {
     constructor(props) {
@@ -120,10 +101,7 @@ class ForwardDialog extends React.Component {
     };
 
     handleClose = () => {
-        TdLibController.clientUpdate({
-            '@type': 'clientUpdateForward',
-            info: null
-        });
+        forward(null);
     };
 
     handleCopyLink = () => {
@@ -133,39 +111,28 @@ class ForwardDialog extends React.Component {
         if (!publicMessageLink) return;
         if (!publicMessageLink.link) return;
 
-        const key = `copy_link_${publicMessageLink.link}`;
-        const message = t('LinkCopied');
-        const action = null;
-
         copy(publicMessageLink.link);
 
-        this.handleScheduledAction(key, message, action);
+        this.handleScheduledAction(t('LinkCopied'));
     };
 
-    handleScheduledAction = (key, message, action) => {
-        if (!key) return;
+    handleScheduledAction = message => {
+        const { enqueueSnackbar, closeSnackbar } = this.props;
 
-        const { enqueueSnackbar } = this.props;
-        if (!enqueueSnackbar) return;
-
-        const TRANSITION_DELAY = 150;
-        if (
-            ApplicationStore.addScheduledAction(key, NOTIFICATION_AUTO_HIDE_DURATION_MS + 2 * TRANSITION_DELAY, action)
-        ) {
-            enqueueSnackbar(message, {
-                autoHideDuration: NOTIFICATION_AUTO_HIDE_DURATION_MS,
-                action: [
-                    <IconButton
-                        key='close'
-                        aria-label='Close'
-                        color='inherit'
-                        className='notification-close-button'
-                        onClick={() => ApplicationStore.removeScheduledAction(key)}>
-                        <CloseIcon />
-                    </IconButton>
-                ]
-            });
-        }
+        const snackKey = enqueueSnackbar(message, {
+            autoHideDuration: NOTIFICATION_AUTO_HIDE_DURATION_MS,
+            preventDuplicate: true,
+            action: [
+                <IconButton
+                    key='close'
+                    aria-label='Close'
+                    color='inherit'
+                    className='notification-close-button'
+                    onClick={() => closeSnackbar(snackKey)}>
+                    <CloseIcon />
+                </IconButton>
+            ]
+        });
     };
 
     getForwardPhotoSize = (chatId, messageIds) => {
@@ -444,7 +411,7 @@ class ForwardDialog extends React.Component {
     };
 
     render() {
-        const { classes, t } = this.props;
+        const { t } = this.props;
         const {
             chatIds,
             searchText,
@@ -489,7 +456,7 @@ class ForwardDialog extends React.Component {
                 onClose={this.handleClose}
                 aria-labelledby='forward-dialog-title'
                 aria-describedby='forward-dialog-description'
-                className={classes.dialog}>
+                className='forward-dialog'>
                 <DialogTitle id='forward-dialog-title'>{t('ShareSendTo')}</DialogTitle>
                 <div
                     ref={this.searchRef}
@@ -501,11 +468,9 @@ class ForwardDialog extends React.Component {
                     onKeyUp={this.handleSearchKeyUp}
                     onPaste={this.handleSearchPaste}
                 />
-                <div className={classNames(classes.borderColor, 'forward-dialog-content')}>
+                <div className='forward-dialog-content'>
                     <div className='forward-dialog-list'>{chats}</div>
-                    {searchText && (
-                        <div className={classNames(classes.searchList, 'forward-dialog-search-list')}>{foundChats}</div>
-                    )}
+                    {searchText && <div className='forward-dialog-search-list'>{foundChats}</div>}
                 </div>
                 {this.targetChats.size > 0 && (
                     <div
@@ -545,7 +510,6 @@ ForwardDialog.propTypes = {
 };
 
 const enhance = compose(
-    withStyles(styles, { withTheme: true }),
     withTranslation(),
     withSnackbar
 );
