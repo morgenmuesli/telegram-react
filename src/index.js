@@ -13,12 +13,16 @@ import TelegramApp from './TelegramApp';
 import registerServiceWorker from './registerServiceWorker';
 import { OPTIMIZATIONS_FIRST_START } from './Constants';
 import './index.css';
+import { Provider } from "react-redux";
+import store from "./Stores/emotion/store";
 
 ReactDOM.render(
+  <Provider store={store}>
     <Router>
-        <Route path='' component={TelegramApp} />
-    </Router>,
-    document.getElementById('root')
+      <Route path="" component={TelegramApp} />
+    </Router>
+  </Provider>,
+  document.getElementById("root")
 );
 
 if (OPTIMIZATIONS_FIRST_START) {
