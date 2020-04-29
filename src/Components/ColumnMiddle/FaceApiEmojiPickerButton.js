@@ -5,7 +5,7 @@ import withStyles from "@material-ui/core/styles/withStyles";
 import { withTranslation } from "react-i18next";
 import ApplicationStore from "../../Stores/ApplicationStore";
 import LocalizationStore from "../../Stores/LocalizationStore";
-import InsertEmoticonIcon from "../../Assets/Icons/Smile";
+import InsertEmoticonIcon from "../../Assets/Icons/Face";
 import IconButton from "@material-ui/core/IconButton";
 import { EMOJI_PICKER_TIMEOUT_MS } from "../../Constants";
 import Button from "@material-ui/core/Button";
@@ -15,6 +15,8 @@ import { emojiIndex } from "emoji-mart";
 import "./RealEmojiPicker";
 import RealEmojiPicker from "./RealEmojiPicker";
 import Webcam from "./Webcam";
+import { connect } from "react-redux";
+import { actions } from "../../Stores/emotion/action/constants";
 
 const styles = theme => ({
   pickerRoot: {
@@ -89,12 +91,14 @@ class FaceApiEmojiPickerButton extends React.Component {
 
   handlePaperMouseEnter = () => {
     this.paperEnter = true;
+    this.props.toggleLock()
   };
 
   handlePaperMouseLeave = () => {
     // return;
 
     this.paperEnter = false;
+    this.props.toggleLock()
     setTimeout(() => {
       this.tryClosePicker();
     }, EMOJI_PICKER_TIMEOUT_MS);
@@ -134,5 +138,11 @@ const enhance = compose(
   withStyles(styles, { withTheme: true }),
   withTranslation()
 );
-
-export default enhance(FaceApiEmojiPickerButton);
+const mapDispatchToProps = (dispatch) => {
+  return {
+    toggleLock: () => {
+      dispatch({ type: actions.TOGGLE_LOCK});
+    },
+  };
+};
+export default connect(null, mapDispatchToProps)(enhance(FaceApiEmojiPickerButton));

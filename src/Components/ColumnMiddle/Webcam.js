@@ -69,6 +69,7 @@ class Webcam extends React.Component {
         console.log(singleResult);
         if (!!singleResult[0]) {
           const expressions = singleResult[0].expressions;
+          expressions.neutral = expressions.neutral*0.7
           const currentEmotion = Object.keys(expressions).reduce((a, b) =>
             expressions[a] > expressions[b] ? a : b
           );
