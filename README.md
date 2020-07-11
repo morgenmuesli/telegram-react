@@ -1,11 +1,20 @@
-# Telegram Web App
+# Telegram Web App including realemotion
+
+
 
 ### Interface
 ![Sample screenshot](/src/Assets/Screenshots/1x_Group.png)
 
 ### Technical details
 
-The app is based on the ReactJS JavaScript framework and TDLib (Telegram Database library) compiled to WebAssembly. Try it [here](https://evgeny-nadymov.github.io/telegram-react/).
+This repository is a forked and updateted project of the telegram react client coded by Evgeny nadymov.
+It contains an emoji suggested based on facial expressions.
+The detector for the facial expression is coded by Vincent Mühler.
+
+For building this project by your own just follow the guidelines.
+
+The telegram-app is based on the ReactJS JavaScript framework and TDLib (Telegram Database library) compiled to WebAssembly.
+For a live demo visit: [live demo](https://morgenmuesli.github.io/telegram-react/)
 
 ### Running locally
 Install [node.js](http://nodejs.org/).
