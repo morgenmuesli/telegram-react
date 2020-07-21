@@ -2,6 +2,7 @@ import React from "react";
 import * as faceapi from "face-api.js";
 import { connect } from "react-redux";
 import { actions } from "../../Stores/emotion/action/constants";
+import { Divider } from "@material-ui/core";
 
 class Webcam extends React.Component {
   constructor(props) {
@@ -69,7 +70,7 @@ class Webcam extends React.Component {
         console.log(singleResult);
         if (!!singleResult[0]) {
           const expressions = singleResult[0].expressions;
-          expressions.neutral = expressions.neutral*0.7
+          expressions.neutral = expressions.neutral * 0.7;
           const currentEmotion = Object.keys(expressions).reduce((a, b) =>
             expressions[a] > expressions[b] ? a : b
           );
@@ -81,11 +82,13 @@ class Webcam extends React.Component {
 
   render() {
     return (
-      <video
-        autoPlay={true}
-        ref={this.videoElement}
-        style={{ display: "none", visibility: "hidden" }}
-      />
+      <div style={{ width: "100%" }}>
+        <video
+          autoPlay={true}
+          ref={this.videoElement}
+          style={{ margin: "auto", width: "90%" }}
+        />
+      </div>
     );
   }
 }

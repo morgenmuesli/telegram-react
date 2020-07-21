@@ -18,7 +18,7 @@ import Webcam from "./Webcam";
 import { connect } from "react-redux";
 import { actions } from "../../Stores/emotion/action/constants";
 
-const styles = theme => ({
+const styles = (theme) => ({
   pickerRoot: {
     zIndex: theme.zIndex.modal,
     width: 338,
@@ -30,11 +30,11 @@ const styles = theme => ({
     boxShadow: theme.shadows[8],
     position: "absolute",
     bottom: 54,
-    display: "none"
+    display: "none",
   },
   pickerRootOpened: {
-    display: "block"
-  }
+    display: "block",
+  },
 });
 
 class FaceApiEmojiPickerButton extends React.Component {
@@ -43,16 +43,16 @@ class FaceApiEmojiPickerButton extends React.Component {
     this.state = {
       open: false,
       tab: 0,
-      currentEmotion: null
+      currentEmotion: null,
     };
   }
 
-  emotionCallback = emotionFromChild => {
+  emotionCallback = (emotionFromChild) => {
     this.setState({
-      currentEmotion: emotionFromChild
+      currentEmotion: emotionFromChild,
     });
   };
-  handleMouseClick = event => {
+  handleMouseClick = (event) => {
     console.log("mouse clicked");
     console.log(this.state.currentEmotion);
     if (this.state.currentEmotion) {
@@ -61,7 +61,7 @@ class FaceApiEmojiPickerButton extends React.Component {
     }
   };
   // opens the menu and set state to open
-  handleButtonMouseEnter = event => {
+  handleButtonMouseEnter = (event) => {
     this.buttonEnter = true;
     setTimeout(() => {
       if (!this.buttonEnter) return;
@@ -85,20 +85,20 @@ class FaceApiEmojiPickerButton extends React.Component {
     }
   };
 
-  updatePicker = function(open) {
+  updatePicker = function (open) {
     this.setState({ open });
   };
 
   handlePaperMouseEnter = () => {
     this.paperEnter = true;
-    this.props.toggleLock()
+    this.props.toggleLock();
   };
 
   handlePaperMouseLeave = () => {
     // return;
 
     this.paperEnter = false;
-    this.props.toggleLock()
+    this.props.toggleLock();
     setTimeout(() => {
       this.tryClosePicker();
     }, EMOJI_PICKER_TIMEOUT_MS);
@@ -121,7 +121,7 @@ class FaceApiEmojiPickerButton extends React.Component {
         </IconButton>
         <div
           className={classNames(classes.pickerRoot, {
-            [classes.pickerRootOpened]: open
+            [classes.pickerRootOpened]: open,
           })}
           onMouseEnter={this.handlePaperMouseEnter}
           onMouseLeave={this.handlePaperMouseLeave}
@@ -141,8 +141,11 @@ const enhance = compose(
 const mapDispatchToProps = (dispatch) => {
   return {
     toggleLock: () => {
-      dispatch({ type: actions.TOGGLE_LOCK});
+      dispatch({ type: actions.TOGGLE_LOCK });
     },
   };
 };
-export default connect(null, mapDispatchToProps)(enhance(FaceApiEmojiPickerButton));
+export default connect(
+  null,
+  mapDispatchToProps
+)(enhance(FaceApiEmojiPickerButton));

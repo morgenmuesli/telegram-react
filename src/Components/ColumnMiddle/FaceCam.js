@@ -24,13 +24,13 @@ class FaceCam extends React.Component {
       detections: null,
       expressions: null,
       facingMode: null,
-      currentEmotion: null
+      currentEmotion: null,
     };
 
     Promise.all([
       faceapi.nets.tinyFaceDetector.load(MODELPATH),
       faceapi.nets.faceExpressionNet.load(MODELPATH),
-      faceapi.nets.faceLandmark68Net.load(MODELPATH)
+      faceapi.nets.faceLandmark68Net.load(MODELPATH),
     ])
       .then(() => {
         console.log("all nets are loaded");
@@ -42,17 +42,17 @@ class FaceCam extends React.Component {
   setInputDevice = () => {
     navigator.mediaDevices
       .enumerateDevices()
-      .then(async devices => {
+      .then(async (devices) => {
         let inputDevice = await devices.filter(
-          device => device.kind === "videoinput"
+          (device) => device.kind === "videoinput"
         );
         if (inputDevice.length < 2) {
           await this.setState({
-            facingMode: "user"
+            facingMode: "user",
           });
         } else {
           await this.setState({
-            facingMode: { exact: "environment" }
+            facingMode: { exact: "environment" },
           });
         }
       })
@@ -71,7 +71,7 @@ class FaceCam extends React.Component {
       await this.getFullFaceDescription(
         this.webcam.current.getScreenshot(),
         inputSize
-      ).then(fullDesc => {
+      ).then((fullDesc) => {
         let currentEmotion = null;
         if (fullDesc) {
           let expressions = fullDesc.expressions;
@@ -92,12 +92,12 @@ class FaceCam extends React.Component {
     }
   };
 
-  getFullFaceDescription = async function(blob, inputSize = 512) {
+  getFullFaceDescription = async function (blob, inputSize = 512) {
     // tiny_face_detector options
     let scoreThreshold = 0.4;
     const OPTION = new faceapi.TinyFaceDetectorOptions({
       inputSize,
-      scoreThreshold
+      scoreThreshold,
     });
 
     // fetch image to api
@@ -130,7 +130,7 @@ class FaceCam extends React.Component {
         width: WIDTH,
         height: HEIGHT,
         facingMode: facingMode,
-        screenshotFormat: "image/jpeg"
+        screenshotFormat: "image/jpeg",
       };
       if (facingMode === "user") {
         camera = "Front";
