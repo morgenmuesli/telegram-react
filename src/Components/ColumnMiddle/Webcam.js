@@ -3,7 +3,7 @@ import * as faceapi from "face-api.js";
 import { connect } from "react-redux";
 import { actions } from "../../Stores/emotion/action/constants";
 import { Divider } from "@material-ui/core";
-
+import "./Webcam.css";
 class Webcam extends React.Component {
   constructor(props) {
     super(props);
@@ -82,11 +82,11 @@ class Webcam extends React.Component {
 
   render() {
     return (
-      <div style={{ width: "100%" }}>
+      <div>
         <video
           autoPlay={true}
           ref={this.videoElement}
-          style={{ margin: "auto", width: "90%" }}
+          className={"videoStyle"}
         />
       </div>
     );
